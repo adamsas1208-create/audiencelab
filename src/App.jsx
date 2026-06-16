@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Bell, Search, Settings } from 'lucide-react'
 import Sidebar, { rooms, roomIds, workspace } from './components/Sidebar/Sidebar'
+import AuthMenu from './components/Auth/AuthMenu'
 import Dashboard from './components/Dashboard/Dashboard'
 import VoteView from './components/VoteView'
 import CreatorStudio from './components/CreatorStudio'
@@ -86,8 +87,8 @@ export default function App() {
             >
               <Settings className="size-4" />
             </button>
-            <div className="ml-1 inline-flex size-9 items-center justify-center rounded-xl bg-gradient-to-br from-turquoise to-periwinkle text-sm font-bold text-black">
-              M
+            <div className="ml-1">
+              <AuthMenu />
             </div>
           </div>
         </header>
