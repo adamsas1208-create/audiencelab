@@ -9,9 +9,42 @@ import { useAuth } from '../../context/auth-context'
  *  - signs the user up (passing the ref to the backend trigger)
  *  - shows the signed-in user's credits and shareable referral link
  */
+// Google's multicolor "G" — lucide-react ships no brand logos.
+function GoogleIcon(props) {
+  return (
+    <svg viewBox="0 0 18 18" aria-hidden="true" {...props}>
+      <path
+        fill="#4285F4"
+        d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84a4.14 4.14 0 0 1-1.8 2.72v2.26h2.92c1.7-1.57 2.68-3.88 2.68-6.62Z"
+      />
+      <path
+        fill="#34A853"
+        d="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.92-2.26c-.8.54-1.84.86-3.04.86-2.34 0-4.32-1.58-5.03-3.7H.96v2.33A9 9 0 0 0 9 18Z"
+      />
+      <path
+        fill="#FBBC05"
+        d="M3.97 10.72a5.4 5.4 0 0 1 0-3.44V4.95H.96a9 9 0 0 0 0 8.1l3.01-2.33Z"
+      />
+      <path
+        fill="#EA4335"
+        d="M9 3.58c1.32 0 2.5.45 3.44 1.35l2.58-2.58C13.47.89 11.43 0 9 0A9 9 0 0 0 .96 4.95l3.01 2.33C4.68 5.16 6.66 3.58 9 3.58Z"
+      />
+    </svg>
+  )
+}
+
 export default function AuthPanel() {
-  const { user, profile, loading, pendingRef, referralLink, signUp, signIn, signOut } =
-    useAuth()
+  const {
+    user,
+    profile,
+    loading,
+    pendingRef,
+    referralLink,
+    signUp,
+    signIn,
+    signInWithGoogle,
+    signOut,
+  } = useAuth()
 
   const [mode, setMode] = useState('signup') // 'signup' | 'signin'
   const [email, setEmail] = useState('')
@@ -40,6 +73,18 @@ export default function AuthPanel() {
     } catch (err) {
       setError(err?.message ?? 'Something went wrong.')
     } finally {
+      setBusy(false)
+    }
+  }
+
+  const googleSignIn = async () => {
+    setError(null)
+    setBusy(true)
+    try {
+      // Redirects to Google; the page returns signed in (ref is preserved).
+      await signInWithGoogle()
+    } catch (err) {
+      setError(err?.message ?? 'Google sign-in failed.')
       setBusy(false)
     }
   }
@@ -134,7 +179,27 @@ export default function AuthPanel() {
         </p>
       )}
 
-      <div className="mt-4 space-y-3">
+      {/* Google OAuth */}
+      <button
+        type="button"
+        onClick={googleSignIn}
+        disabled={busy}
+        className="mt-4 flex w-full items-center justify-center gap-2.5 rounded-lg border border-white/15 bg-white px-3 py-2.5 text-sm font-semibold text-zinc-800 transition-all hover:bg-zinc-100 disabled:opacity-50"
+      >
+        <GoogleIcon className="size-4" />
+        Continue with Google
+      </button>
+
+      {/* divider */}
+      <div className="my-4 flex items-center gap-3">
+        <span className="h-px flex-1 bg-white/10" />
+        <span className="text-[11px] font-medium uppercase tracking-wide text-zinc-600">
+          or
+        </span>
+        <span className="h-px flex-1 bg-white/10" />
+      </div>
+
+      <div className="space-y-3">
         <input
           type="email"
           required

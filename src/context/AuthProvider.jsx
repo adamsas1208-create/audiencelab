@@ -38,27 +38,50 @@ export function AuthProvider({ children }) {
     setProfile(data ?? null)
   }, [])
 
+  // Claims a pending referral code on the backend. Used for OAuth signups
+  // (Google), where the ref can't ride along in user metadata. Server-side
+  // guards make it idempotent and abuse-resistant, so calling it twice is safe.
+  const applyPendingReferral = useCallback(async (userId) => {
+    if (!userId) return
+    const ref = localStorage.getItem(REF_KEY)
+    if (!ref) return
+    try {
+      await supabase.rpc('apply_referral', { p_code: ref })
+    } catch {
+      /* non-fatal: leave the rest of the flow intact */
+    }
+    localStorage.removeItem(REF_KEY)
+    setPendingRef(null)
+  }, [])
+
   useEffect(() => {
     let active = true
 
-    supabase.auth.getSession().then(({ data }) => {
+    const init = async () => {
+      const { data } = await supabase.auth.getSession()
       if (!active) return
       setSession(data.session)
-      loadProfile(data.session?.user?.id).finally(() => {
-        if (active) setLoading(false)
-      })
-    })
+      if (data.session?.user) await applyPendingReferral(data.session.user.id)
+      await loadProfile(data.session?.user?.id)
+      if (active) setLoading(false)
+    }
+    init()
 
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, next) => {
+    const { data: sub } = supabase.auth.onAuthStateChange((event, next) => {
       setSession(next)
-      loadProfile(next?.user?.id)
+      if (event === 'SIGNED_IN' && next?.user) {
+        // New (or returning) sign-in — apply any pending ref, then refresh.
+        applyPendingReferral(next.user.id).then(() => loadProfile(next.user.id))
+      } else {
+        loadProfile(next?.user?.id)
+      }
     })
 
     return () => {
       active = false
       sub.subscription.unsubscribe()
     }
-  }, [loadProfile])
+  }, [loadProfile, applyPendingReferral])
 
   const signUp = useCallback(async ({ email, password }) => {
     const ref = localStorage.getItem(REF_KEY) || undefined
@@ -87,6 +110,20 @@ export function AuthProvider({ children }) {
     return data
   }, [])
 
+  // Native Supabase Google OAuth (full-page redirect). The pending ref stays
+  // in localStorage across the redirect and is claimed on return via
+  // applyPendingReferral. `prompt: select_account` always shows the chooser.
+  const signInWithGoogle = useCallback(async () => {
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: window.location.origin,
+        queryParams: { prompt: 'select_account' },
+      },
+    })
+    if (error) throw error
+  }, [])
+
   const signOut = useCallback(async () => {
     await supabase.auth.signOut()
   }, [])
@@ -109,10 +146,22 @@ export function AuthProvider({ children }) {
       referralLink,
       signUp,
       signIn,
+      signInWithGoogle,
       signOut,
       refreshProfile: () => loadProfile(session?.user?.id),
     }),
-    [session, profile, loading, pendingRef, referralLink, signUp, signIn, signOut, loadProfile],
+    [
+      session,
+      profile,
+      loading,
+      pendingRef,
+      referralLink,
+      signUp,
+      signIn,
+      signInWithGoogle,
+      signOut,
+      loadProfile,
+    ],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
