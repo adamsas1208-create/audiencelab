@@ -45,9 +45,14 @@ create index if not exists votes_created_at_idx   on public.votes(created_at);
 -- ----------------------------------------------------------------------------
 -- 2. Keep hooks.votes in sync as vote events arrive
 -- ----------------------------------------------------------------------------
+-- SECURITY DEFINER so the counter update runs as the function owner and
+-- bypasses RLS. Anon inserts the vote but has no UPDATE policy on hooks, so a
+-- SECURITY INVOKER trigger would silently update 0 rows.
 create or replace function public.bump_hook_votes()
 returns trigger
 language plpgsql
+security definer
+set search_path = ''
 as $$
 begin
   update public.hooks set votes = votes + 1 where id = new.hook_id;
