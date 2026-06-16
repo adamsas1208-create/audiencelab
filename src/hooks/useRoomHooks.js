@@ -1,42 +1,61 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { supabase } from '../lib/supabaseClient'
 
 /**
  * Live hooks for a single room, used by the Vote View.
  *
- * Returns { hooks, status, error } where status is
- * 'loading' | 'live' | 'error'. Vote counts stay current because the DB
- * trigger updates hooks.votes on every vote, and we subscribe to those
- * UPDATEs (and to new hooks) filtered to this room.
+ * Returns { hooks, status, error, refetch, bumpHook } where status is
+ * 'loading' | 'live' | 'error'.
+ *
+ * Counts stay correct without depending on realtime: callers optimistically
+ * `bumpHook` then `refetch` for the authoritative value. The realtime
+ * subscription is an extra channel for *other* users' votes. All three paths
+ * write absolute counts (refetch/realtime) or +1 (bump reconciled by refetch),
+ * so they never double-count.
  */
 export default function useRoomHooks(roomId) {
   const [hooks, setHooks] = useState([])
   const [status, setStatus] = useState('loading')
   const [error, setError] = useState(null)
 
+  // Loads (or reloads) the room's hooks. `status` starts at 'loading' from
+  // useState, so there's no need to set it synchronously here.
+  const refetch = useCallback(async () => {
+    if (!roomId) return
+    const { data, error: err } = await supabase
+      .from('hooks')
+      .select('id, text, votes')
+      .eq('room_id', roomId)
+      .eq('is_active', true)
+      .order('created_at', { ascending: true })
+
+    if (err) {
+      setError(err.message)
+      setStatus('error')
+      return
+    }
+    setHooks(data ?? [])
+    setStatus('live')
+  }, [roomId])
+
+  // Optimistic +1 for instant feedback; refetch/realtime reconcile to truth.
+  const bumpHook = useCallback((hookId) => {
+    setHooks((prev) =>
+      prev.map((h) => (h.id === hookId ? { ...h, votes: h.votes + 1 } : h)),
+    )
+  }, [])
+
   useEffect(() => {
     if (!roomId) return undefined
     let cancelled = false
 
     const load = async () => {
-      setStatus('loading')
-      const { data, error: err } = await supabase
-        .from('hooks')
-        .select('id, text, votes')
-        .eq('room_id', roomId)
-        .eq('is_active', true)
-        .order('created_at', { ascending: true })
-
-      if (cancelled) return
-      if (err) {
-        setError(err.message)
-        setStatus('error')
-        return
+      try {
+        await refetch()
+      } catch {
+        if (!cancelled) setStatus('error')
       }
-      setHooks(data ?? [])
-      setStatus('live')
     }
-
     load()
 
     const channel = supabase
@@ -86,7 +105,7 @@ export default function useRoomHooks(roomId) {
       cancelled = true
       supabase.removeChannel(channel)
     }
-  }, [roomId])
+  }, [roomId, refetch])
 
-  return { hooks, status, error }
+  return { hooks, status, error, refetch, bumpHook }
 }

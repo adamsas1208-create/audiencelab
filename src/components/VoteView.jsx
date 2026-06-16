@@ -129,7 +129,7 @@ function OptionCard({ letter, option, totalVotes, isWinner, voted, picked, onVot
  * (realtime) and writes through castVote(); other users' votes stream in
  * live because the DB trigger updates hooks.votes on every insert.
  */
-function LiveVote({ roomId, roomName, hooks }) {
+function LiveVote({ roomId, roomName, hooks, refetch, bumpHook }) {
   // A key={roomId} on this component (see VoteView) remounts it per room,
   // so this local selection state resets naturally on room change.
   const [picked, setPicked] = useState(null)
@@ -155,15 +155,18 @@ function LiveVote({ roomId, roomName, hooks }) {
     if (voted || submitting) return
     setSubmitting(true)
     setVoteError(null)
-    setPicked(hookId) // optimistic: reveal results immediately
+    setPicked(hookId) // reveal results immediately
+    bumpHook(hookId) // optimistic +1 so the count moves without waiting
     try {
       await castVote({ roomId, hookId })
-      // The realtime hooks UPDATE reconciles the live counts shortly after.
     } catch (e) {
       setVoteError(e?.message ?? 'Vote failed — please try again.')
       setPicked(null) // let the user retry
     } finally {
       setSubmitting(false)
+      // Reconcile to the authoritative DB count — works even if the realtime
+      // subscription isn't delivering. Also undoes the optimistic bump on error.
+      refetch()
     }
   }
 
@@ -381,7 +384,7 @@ function DemoVote({ roomName }) {
 export default function VoteView({ roomId, roomName }) {
   const effectiveRoomId = roomId ?? 'hook-lab'
   const effectiveRoomName = roomName ?? (roomId ? undefined : 'Hook Lab')
-  const { hooks, status } = useRoomHooks(effectiveRoomId)
+  const { hooks, status, refetch, bumpHook } = useRoomHooks(effectiveRoomId)
 
   if (status === 'live' && hooks.length > 0) {
     return (
@@ -390,6 +393,8 @@ export default function VoteView({ roomId, roomName }) {
         roomId={effectiveRoomId}
         roomName={effectiveRoomName}
         hooks={hooks}
+        refetch={refetch}
+        bumpHook={bumpHook}
       />
     )
   }
