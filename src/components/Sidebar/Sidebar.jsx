@@ -13,6 +13,7 @@ import {
   MessagesSquare,
   Plane,
   TrendingUp,
+  Users,
   UtensilsCrossed,
   Vote,
 } from 'lucide-react'
@@ -20,6 +21,7 @@ import {
 // Primary workspace views.
 export const workspace = [
   { id: 'dashboard', label: 'Rooms Dashboard', icon: LayoutGrid },
+  { id: 'audience', label: 'Audience', icon: Users },
   { id: 'vote', label: 'Vote View', icon: Vote },
   { id: 'studio', label: 'Creator Studio', icon: BarChart3 },
   { id: 'critique', label: 'Critique Room', icon: MessagesSquare },

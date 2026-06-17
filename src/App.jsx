@@ -3,6 +3,7 @@ import { Bell, Search, Settings } from 'lucide-react'
 import Sidebar, { rooms, roomIds, workspace } from './components/Sidebar/Sidebar'
 import AuthMenu from './components/Auth/AuthMenu'
 import Dashboard from './components/Dashboard/Dashboard'
+import Audience from './components/Audience/Audience'
 import VoteView from './components/VoteView'
 import CreatorStudio from './components/CreatorStudio'
 import CritiqueRoom from './components/CritiqueRoom'
@@ -20,6 +21,7 @@ export default function App() {
   // room) drops into that room's Vote View.
   const renderView = () => {
     if (active === 'dashboard') return <Dashboard onEnterRoom={setActive} />
+    if (active === 'audience') return <Audience />
     if (active === 'studio') return <CreatorStudio />
     if (active === 'critique') return <CritiqueRoom />
     return <VoteView roomId={activeRoom?.id} roomName={activeRoom?.label} />
