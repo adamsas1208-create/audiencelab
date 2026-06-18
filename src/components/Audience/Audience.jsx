@@ -5,6 +5,7 @@ import {
   Plus,
   RefreshCw,
   Search,
+  Sparkles,
   TrendingUp,
   UserPlus,
   Users,
@@ -13,6 +14,7 @@ import {
 import { useAuth } from '../../context/auth-context'
 import { addContact, fetchMyAudience } from '../../lib/contacts'
 import AuthPanel from '../Auth/AuthPanel'
+import LeadMagnetStudio from './LeadMagnetStudio'
 
 const PLATFORMS = ['TikTok', 'YouTube', 'Instagram', 'X', 'LinkedIn', 'Other']
 // Filter tabs in the requested order (no "Other"; it still shows under "All").
@@ -191,6 +193,7 @@ export default function Audience() {
   const [showForm, setShowForm] = useState(false)
   const [search, setSearch] = useState('')
   const [platformFilter, setPlatformFilter] = useState('All')
+  const [view, setView] = useState('contacts') // contacts | studio
 
   useEffect(() => {
     if (!user) return undefined
@@ -297,34 +300,73 @@ export default function Audience() {
             Your contacts
           </h2>
           <p className="mt-1 text-sm text-zinc-500">
-            {status === 'ready'
-              ? `${contacts.length} contact${contacts.length === 1 ? '' : 's'} in your audience.`
-              : 'Manage the people in your audience.'}
+            {view === 'studio'
+              ? 'Generate share-ready resources that attract high-value leads.'
+              : status === 'ready'
+                ? `${contacts.length} contact${contacts.length === 1 ? '' : 's'} in your audience.`
+                : 'Manage the people in your audience.'}
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={refresh}
-            className="inline-flex size-9 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-zinc-400 transition-colors hover:text-zinc-100"
-            title="Refresh"
-          >
-            <RefreshCw className="size-4" />
-          </button>
-          <button
-            type="button"
-            onClick={() => setShowForm(true)}
-            className="inline-flex items-center gap-2 rounded-xl bg-turquoise px-4 py-2 text-sm font-semibold text-black transition-all hover:brightness-110"
-            style={{ boxShadow: '0 0 18px -4px #34e0a188' }}
-          >
-            <Plus className="size-4" /> Add contact
-          </button>
-        </div>
+        {view === 'contacts' && (
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={refresh}
+              className="inline-flex size-9 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-zinc-400 transition-colors hover:text-zinc-100"
+              title="Refresh"
+            >
+              <RefreshCw className="size-4" />
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowForm(true)}
+              className="inline-flex items-center gap-2 rounded-xl bg-turquoise px-4 py-2 text-sm font-semibold text-black transition-all hover:brightness-110"
+              style={{ boxShadow: '0 0 18px -4px #34e0a188' }}
+            >
+              <Plus className="size-4" /> Add contact
+            </button>
+          </div>
+        )}
       </div>
 
-      {/* Body */}
-      <div className="mt-7">
+      {/* View toggle */}
+      <div className="mt-6 inline-flex rounded-xl border border-white/10 bg-white/5 p-1">
+        <button
+          type="button"
+          onClick={() => setView('contacts')}
+          className={[
+            'inline-flex items-center gap-2 rounded-lg px-4 py-1.5 text-sm font-semibold transition-colors',
+            view === 'contacts'
+              ? 'bg-turquoise/15 text-turquoise'
+              : 'text-zinc-400 hover:text-zinc-100',
+          ].join(' ')}
+        >
+          <Users className="size-4" /> Contacts
+        </button>
+        <button
+          type="button"
+          onClick={() => setView('studio')}
+          className={[
+            'inline-flex items-center gap-2 rounded-lg px-4 py-1.5 text-sm font-semibold transition-colors',
+            view === 'studio'
+              ? 'bg-turquoise/15 text-turquoise'
+              : 'text-zinc-400 hover:text-zinc-100',
+          ].join(' ')}
+        >
+          <Sparkles className="size-4" /> Lead Magnet Studio
+        </button>
+      </div>
+
+      {/* Studio view */}
+      {view === 'studio' && (
+        <div className="mt-7">
+          <LeadMagnetStudio />
+        </div>
+      )}
+
+      {/* Contacts body */}
+      <div className={view === 'contacts' ? 'mt-7' : 'hidden'}>
         {status === 'loading' && (
           <p className="rounded-2xl border border-white/10 bg-zinc-950/60 p-8 text-center text-sm text-zinc-500">
             Loading your audience…
