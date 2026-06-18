@@ -1,10 +1,22 @@
-import { useEffect, useState } from 'react'
-import { Mail, Plus, RefreshCw, UserPlus, Users, X } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
+import {
+  Activity,
+  Mail,
+  Plus,
+  RefreshCw,
+  Search,
+  TrendingUp,
+  UserPlus,
+  Users,
+  X,
+} from 'lucide-react'
 import { useAuth } from '../../context/auth-context'
 import { addContact, fetchMyAudience } from '../../lib/contacts'
 import AuthPanel from '../Auth/AuthPanel'
 
 const PLATFORMS = ['TikTok', 'YouTube', 'Instagram', 'X', 'LinkedIn', 'Other']
+// Filter tabs in the requested order (no "Other"; it still shows under "All").
+const FILTER_TABS = ['All', 'YouTube', 'TikTok', 'Instagram', 'X', 'LinkedIn']
 const PLATFORM_COLOR = {
   TikTok: '#34e0a1',
   YouTube: '#ef4444',
@@ -24,6 +36,29 @@ function PlatformBadge({ platform }) {
       <span className="size-1.5 rounded-full" style={{ backgroundColor: color }} />
       {platform || '—'}
     </span>
+  )
+}
+
+function SummaryCard({ icon: Icon, label, value, sub }) {
+  return (
+    <div className="relative overflow-hidden rounded-2xl border border-white/10 bg-zinc-950/60 p-5">
+      <div className="pointer-events-none absolute -right-10 -top-10 size-28 rounded-full bg-turquoise/10 blur-2xl" />
+      <div className="relative flex items-center justify-between">
+        <span className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">
+          {label}
+        </span>
+        <span className="inline-flex size-8 items-center justify-center rounded-lg bg-turquoise/10 ring-1 ring-turquoise/25">
+          <Icon
+            className="size-4 text-turquoise"
+            style={{ filter: 'drop-shadow(0 0 6px #34e0a1)' }}
+          />
+        </span>
+      </div>
+      <p className="relative mt-3 truncate text-2xl font-bold tracking-tight text-zinc-50">
+        {value}
+      </p>
+      {sub && <p className="relative mt-0.5 text-xs text-zinc-500">{sub}</p>}
+    </div>
   )
 }
 
@@ -154,6 +189,8 @@ export default function Audience() {
   const [error, setError] = useState(null)
   const [reloadKey, setReloadKey] = useState(0)
   const [showForm, setShowForm] = useState(false)
+  const [search, setSearch] = useState('')
+  const [platformFilter, setPlatformFilter] = useState('All')
 
   useEffect(() => {
     if (!user) return undefined
@@ -177,6 +214,49 @@ export default function Audience() {
       active = false
     }
   }, [user, reloadKey])
+
+  // Headline metrics — computed from the full (unfiltered) contact list.
+  const metrics = useMemo(() => {
+    const total = contacts.length
+
+    const counts = {}
+    for (const c of contacts) {
+      const p = c.platform || 'Other'
+      counts[p] = (counts[p] || 0) + 1
+    }
+    let topChannel = '—'
+    let topCount = 0
+    for (const [p, n] of Object.entries(counts)) {
+      if (n > topCount) {
+        topCount = n
+        topChannel = p
+      }
+    }
+
+    const scores = contacts
+      .map((c) => Number(c.engagement_score))
+      .filter((n) => Number.isFinite(n))
+    const avg = scores.length
+      ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length)
+      : null
+
+    return { total, topChannel, topCount, avg }
+  }, [contacts])
+
+  // Client-side filtering for the table — no re-fetch.
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    return contacts.filter((c) => {
+      if (platformFilter !== 'All' && (c.platform || '') !== platformFilter) {
+        return false
+      }
+      if (!q) return true
+      return (
+        (c.full_name || '').toLowerCase().includes(q) ||
+        (c.email || '').toLowerCase().includes(q)
+      )
+    })
+  }, [contacts, search, platformFilter])
 
   // Signed out — prompt to authenticate (contacts are per-user).
   if (!authLoading && !user) {
@@ -279,44 +359,116 @@ export default function Audience() {
         )}
 
         {status === 'ready' && contacts.length > 0 && (
-          <div className="overflow-hidden rounded-2xl border border-white/10 bg-zinc-950/60">
-            <table className="w-full text-left text-sm">
-              <thead>
-                <tr className="border-b border-white/10 text-[11px] uppercase tracking-wide text-zinc-500">
-                  <th className="px-5 py-3 font-semibold">Name</th>
-                  <th className="px-5 py-3 font-semibold">Email</th>
-                  <th className="px-5 py-3 font-semibold">Platform</th>
-                  <th className="px-5 py-3 text-right font-semibold">Added</th>
-                </tr>
-              </thead>
-              <tbody>
-                {contacts.map((c) => (
-                  <tr
-                    key={c.id}
-                    className="border-b border-white/[0.06] transition-colors last:border-0 hover:bg-white/[0.02]"
+          <>
+            {/* Summary cards */}
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+              <SummaryCard
+                icon={Users}
+                label="Total Audience"
+                value={metrics.total}
+              />
+              <SummaryCard
+                icon={TrendingUp}
+                label="Top Channel"
+                value={metrics.topChannel}
+                sub={
+                  metrics.topChannel !== '—'
+                    ? `${metrics.topCount} contact${metrics.topCount === 1 ? '' : 's'}`
+                    : undefined
+                }
+              />
+              <SummaryCard
+                icon={Activity}
+                label="Avg. Engagement"
+                value={metrics.avg ?? '—'}
+              />
+            </div>
+
+            {/* Search + platform filter tabs */}
+            <div className="mt-6 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+              <div className="relative w-full max-w-xs">
+                <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-zinc-500" />
+                <input
+                  type="text"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Search name or email…"
+                  className="w-full rounded-xl border border-white/10 bg-white/5 py-2 pl-9 pr-3 text-sm text-zinc-200 placeholder:text-zinc-600 focus:border-turquoise/40 focus:outline-none"
+                />
+              </div>
+              <div className="flex flex-wrap items-center gap-1.5">
+                {FILTER_TABS.map((tab) => (
+                  <button
+                    key={tab}
+                    type="button"
+                    onClick={() => setPlatformFilter(tab)}
+                    className={[
+                      'rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors',
+                      platformFilter === tab
+                        ? 'bg-turquoise/15 text-turquoise'
+                        : 'border border-white/10 bg-white/5 text-zinc-400 hover:text-zinc-100',
+                    ].join(' ')}
                   >
-                    <td className="px-5 py-3.5 font-medium text-zinc-100">
-                      {c.full_name || '—'}
-                    </td>
-                    <td className="px-5 py-3.5 text-zinc-400">
-                      <span className="inline-flex items-center gap-1.5">
-                        <Mail className="size-3.5 text-zinc-600" />
-                        {c.email || '—'}
-                      </span>
-                    </td>
-                    <td className="px-5 py-3.5">
-                      <PlatformBadge platform={c.platform} />
-                    </td>
-                    <td className="px-5 py-3.5 text-right text-zinc-500">
-                      {c.created_at
-                        ? new Date(c.created_at).toLocaleDateString()
-                        : '—'}
-                    </td>
-                  </tr>
+                    {tab}
+                  </button>
                 ))}
-              </tbody>
-            </table>
-          </div>
+              </div>
+            </div>
+
+            {/* Table */}
+            {filtered.length === 0 ? (
+              <p className="mt-4 rounded-2xl border border-white/10 bg-zinc-950/60 p-8 text-center text-sm text-zinc-500">
+                No contacts match your filters.
+              </p>
+            ) : (
+              <div className="mt-4 overflow-hidden rounded-2xl border border-white/10 bg-zinc-950/60">
+                <table className="w-full text-left text-sm">
+                  <thead>
+                    <tr className="border-b border-white/10 text-[11px] uppercase tracking-wide text-zinc-500">
+                      <th className="px-5 py-3 font-semibold">Name</th>
+                      <th className="px-5 py-3 font-semibold">Email</th>
+                      <th className="px-5 py-3 font-semibold">Platform</th>
+                      <th className="px-5 py-3 text-right font-semibold">
+                        Engagement
+                      </th>
+                      <th className="px-5 py-3 text-right font-semibold">Added</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filtered.map((c) => (
+                      <tr
+                        key={c.id}
+                        className="border-b border-white/[0.06] transition-colors last:border-0 hover:bg-white/[0.02]"
+                      >
+                        <td className="px-5 py-3.5 font-medium text-zinc-100">
+                          {c.full_name || '—'}
+                        </td>
+                        <td className="px-5 py-3.5 text-zinc-400">
+                          <span className="inline-flex items-center gap-1.5">
+                            <Mail className="size-3.5 text-zinc-600" />
+                            {c.email || '—'}
+                          </span>
+                        </td>
+                        <td className="px-5 py-3.5">
+                          <PlatformBadge platform={c.platform} />
+                        </td>
+                        <td className="px-5 py-3.5 text-right font-semibold text-turquoise">
+                          {Number.isFinite(Number(c.engagement_score))
+                            ? c.engagement_score
+                            : '—'}
+                        </td>
+                        <td className="px-5 py-3.5 text-right text-zinc-500">
+                          {c.created_at
+                            ? new Date(c.created_at).toLocaleDateString()
+                            : '—'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </>
         )}
       </div>
 

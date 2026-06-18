@@ -18,7 +18,7 @@ export async function fetchMyAudience() {
   const userId = await requireUserId()
   const { data, error } = await supabase
     .from('contacts')
-    .select('id, full_name, email, platform, created_at')
+    .select('id, full_name, email, platform, engagement_score, created_at')
     .eq('user_id', userId)
     .order('created_at', { ascending: false })
 
@@ -32,7 +32,7 @@ export async function addContact({ full_name, email, platform }) {
   const { data, error } = await supabase
     .from('contacts')
     .insert({ user_id: userId, full_name, email, platform })
-    .select('id, full_name, email, platform, created_at')
+    .select('id, full_name, email, platform, engagement_score, created_at')
     .single()
 
   if (error) throw error
