@@ -9,9 +9,19 @@ import {
   TrendingUp,
   Users,
 } from 'lucide-react'
-import { fetchPublicProfile, captureLead } from '../../lib/profiles'
+import { useData } from '../../context/data-context'
 import { fetchRoomStats, castVote } from '../../lib/rooms'
 import { supabase } from '../../lib/supabaseClient'
+
+// Fallback poll so the vote widget always works, even with no DB connection.
+const LOCAL_POLL = {
+  id: null,
+  hooks: [
+    { id: 'local-1', text: 'A day-in-my-life vlog', votes: 42 },
+    { id: 'local-2', text: 'My honest gear review', votes: 31 },
+    { id: 'local-3', text: 'Behind the scenes of my process', votes: 18 },
+  ],
+}
 
 // Initials fallback when there's no avatar (or it fails to load).
 function initials(name, handle) {
@@ -22,30 +32,14 @@ function initials(name, handle) {
 }
 
 export default function PublicProfile({ handle }) {
-  const [profile, setProfile] = useState(null)
-  const [status, setStatus] = useState('loading') // loading | ready | notfound | error
+  const { profile } = useData()
 
-  useEffect(() => {
-    let active = true
-    ;(async () => {
-      try {
-        const data = await fetchPublicProfile(handle)
-        if (!active) return
-        if (!data) {
-          setStatus('notfound')
-          return
-        }
-        setProfile(data)
-        setStatus('ready')
-      } catch {
-        if (!active) return
-        setStatus('notfound')
-      }
-    })()
-    return () => {
-      active = false
-    }
-  }, [handle])
+  // The public page renders the locally-stored creator profile when its handle
+  // matches the URL and it has been made public.
+  const match =
+    profile.is_public &&
+    profile.handle &&
+    profile.handle.toLowerCase() === (handle || '').toLowerCase()
 
   return (
     <div className="relative min-h-screen overflow-hidden bg-zinc-950 text-zinc-100">
@@ -65,13 +59,7 @@ export default function PublicProfile({ handle }) {
       </div>
 
       <div className="relative z-10 mx-auto flex min-h-screen w-full max-w-lg flex-col px-5 py-10 sm:py-14">
-        {status === 'loading' && (
-          <div className="flex flex-1 items-center justify-center">
-            <Loader2 className="size-7 animate-spin text-turquoise" />
-          </div>
-        )}
-
-        {(status === 'notfound' || status === 'error') && (
+        {!match ? (
           <div className="flex flex-1 flex-col items-center justify-center text-center">
             <span className="inline-flex size-14 items-center justify-center rounded-2xl bg-white/5">
               <Users className="size-7 text-zinc-500" />
@@ -80,19 +68,17 @@ export default function PublicProfile({ handle }) {
               Profile not found
             </h1>
             <p className="mt-1 max-w-xs text-sm text-zinc-500">
-              This creator hasn’t published a public profile at
+              No public profile is published at
               <span className="text-zinc-300"> /p/{handle}</span> yet.
             </p>
           </div>
-        )}
-
-        {status === 'ready' && profile && (
+        ) : (
           <>
             <Hero profile={profile} />
             {profile.featured_video_url && (
               <VideoLinkButton url={profile.featured_video_url} />
             )}
-            <LeadMagnetForm handle={profile.handle} />
+            <LeadMagnetForm />
             <VoteSneakPeek />
             <footer className="mt-10 text-center text-xs text-zinc-600">
               Powered by{' '}
@@ -183,23 +169,21 @@ function VideoLinkButton({ url }) {
   )
 }
 
-function LeadMagnetForm({ handle }) {
+function LeadMagnetForm() {
+  const { addLead, toast } = useData()
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
-  const [state, setState] = useState('idle') // idle | submitting | done | error
-  const [error, setError] = useState(null)
+  const [state, setState] = useState('idle') // idle | submitting | done
 
-  const submit = async (e) => {
+  const submit = (e) => {
     e.preventDefault()
     setState('submitting')
-    setError(null)
-    try {
-      await captureLead({ handle, full_name: name, email })
-      setState('done')
-    } catch (err) {
-      setError(err?.message ?? 'Something went wrong. Try again.')
-      setState('error')
-    }
+    // Add the follower to the creator's audience (platform tagged 'Web').
+    addLead({ full_name: name, email, platform: 'Web' })
+    toast('Your exclusive bonuses are unlocked. 🎉', {
+      title: 'Welcome to the inner circle!',
+    })
+    setState('done')
   }
 
   return (
@@ -260,8 +244,6 @@ function LeadMagnetForm({ handle }) {
             />
           </div>
 
-          {error && <p className="mt-2 text-xs text-rose-400">{error}</p>}
-
           <button
             type="submit"
             disabled={state === 'submitting'}
@@ -285,9 +267,9 @@ function LeadMagnetForm({ handle }) {
 }
 
 function VoteSneakPeek() {
+  const { recordVote } = useData()
   const [room, setRoom] = useState(null)
   const [hooks, setHooks] = useState([])
-  const [status, setStatus] = useState('loading') // loading | ready | empty
   const [votedId, setVotedId] = useState(null)
 
   useEffect(() => {
@@ -298,10 +280,7 @@ function VoteSneakPeek() {
         const pick =
           stats.find((r) => r.flagship) ??
           [...stats].sort((a, b) => (b.engagement ?? 0) - (a.engagement ?? 0))[0]
-        if (!pick) {
-          if (active) setStatus('empty')
-          return
-        }
+        if (!pick) throw new Error('no rooms')
         const { data } = await supabase
           .from('hooks')
           .select('id, text, votes')
@@ -310,11 +289,18 @@ function VoteSneakPeek() {
           .order('votes', { ascending: false })
           .limit(3)
         if (!active) return
-        setRoom(pick)
-        setHooks(data ?? [])
-        setStatus((data ?? []).length ? 'ready' : 'empty')
+        if (data && data.length) {
+          setRoom(pick)
+          setHooks(data)
+          return
+        }
+        throw new Error('no hooks')
       } catch {
-        if (active) setStatus('empty')
+        // Fall back to a local poll so the widget always renders.
+        if (active) {
+          setRoom(LOCAL_POLL)
+          setHooks(LOCAL_POLL.hooks)
+        }
       }
     })()
     return () => {
@@ -327,18 +313,18 @@ function VoteSneakPeek() {
     [hooks],
   )
 
-  if (status === 'loading' || status === 'empty') return null
+  if (!hooks.length) return null
 
-  const vote = async (hookId) => {
+  const vote = (hookId) => {
     if (votedId) return
     setVotedId(hookId)
     setHooks((prev) =>
       prev.map((h) => (h.id === hookId ? { ...h, votes: (h.votes || 0) + 1 } : h)),
     )
-    try {
-      await castVote({ roomId: room.id, hookId })
-    } catch {
-      // Optimistic — keep the UI satisfying even if the write blips.
+    recordVote() // bump the creator's global analytics
+    // Best-effort real vote when the poll came from a live room.
+    if (room?.id) {
+      castVote({ roomId: room.id, hookId }).catch(() => {})
     }
   }
 
@@ -384,12 +370,10 @@ function VoteSneakPeek() {
               )}
               <span className="relative flex items-center justify-between gap-3">
                 <span className="text-sm text-zinc-200">{h.text}</span>
-                {votedId ? (
+                {votedId && (
                   <span className="shrink-0 text-xs font-bold text-turquoise">
                     {pct}%
                   </span>
-                ) : (
-                  isVoted && <Check className="size-4 shrink-0 text-turquoise" />
                 )}
               </span>
             </button>

@@ -43,6 +43,21 @@ body {
   background: #34e0a1;
 }
 
+/* Toast entrance — used by the global Toaster. */
+@keyframes al-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(-12px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.al-toast-in {
+  animation: al-toast-in 0.25s ease-out;
+}
+
 /* Super-thin, dark scrollbar for the scrollable rooms list in the sidebar.
    Stays nearly invisible until the row is hovered. */
 .sidebar-scroll {

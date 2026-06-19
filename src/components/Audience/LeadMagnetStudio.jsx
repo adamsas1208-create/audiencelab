@@ -1,4 +1,5 @@
 import { useMemo, useRef, useState } from 'react'
+import { useData } from '../../context/data-context'
 import {
   ArrowRight,
   BarChart3,
@@ -121,6 +122,7 @@ function slugify(niche) {
 }
 
 export default function LeadMagnetStudio() {
+  const { leadsCaptured } = useData()
   const [niche, setNiche] = useState('')
   const [typeId, setTypeId] = useState(MAGNET_TYPES[0].id)
   const [status, setStatus] = useState('idle') // idle | generating | done
@@ -330,6 +332,7 @@ export default function LeadMagnetStudio() {
             shareUrl={shareUrl}
             copied={copied}
             onCopy={copyLink}
+            leadsCaptured={leadsCaptured}
           />
         </div>
       )}
@@ -391,7 +394,7 @@ function GeneratedContent({ result }) {
   )
 }
 
-function PublishPanel({ shareUrl, copied, onCopy }) {
+function PublishPanel({ shareUrl, copied, onCopy, leadsCaptured = 0 }) {
   return (
     <div className="relative overflow-hidden rounded-2xl border border-turquoise/20 bg-gradient-to-br from-turquoise/[0.08] to-transparent p-5">
       <div className="pointer-events-none absolute -right-8 -top-8 size-32 rounded-full bg-turquoise/10 blur-2xl" />
@@ -437,10 +440,11 @@ function PublishPanel({ shareUrl, copied, onCopy }) {
             Leads Captured
           </div>
           <p className="mt-1 text-3xl font-bold tracking-tight text-zinc-50">
-            0
+            {leadsCaptured}
           </p>
           <p className="mt-0.5 inline-flex items-center gap-1 text-[11px] text-zinc-500">
-            Live tracking <ArrowRight className="size-3" /> waiting for clicks
+            Live tracking <ArrowRight className="size-3" />{' '}
+            {leadsCaptured > 0 ? 'and counting' : 'waiting for clicks'}
           </p>
         </div>
       </div>

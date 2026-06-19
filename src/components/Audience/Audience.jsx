@@ -1,19 +1,19 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import {
   Activity,
   Mail,
   Plus,
   Globe,
-  RefreshCw,
   Search,
   Sparkles,
   TrendingUp,
   UserPlus,
   Users,
   X,
+  Zap,
 } from 'lucide-react'
 import { useAuth } from '../../context/auth-context'
-import { addContact, fetchMyAudience } from '../../lib/contacts'
+import { useData } from '../../context/data-context'
 import AuthPanel from '../Auth/AuthPanel'
 import LeadMagnetStudio from './LeadMagnetStudio'
 import ProfileSettings from './ProfileSettings'
@@ -66,24 +66,26 @@ function SummaryCard({ icon: Icon, label, value, sub }) {
   )
 }
 
-function AddContactModal({ onClose, onAdded }) {
+function AddContactModal({ onClose }) {
+  const { addContact, toast } = useData()
   const [fullName, setFullName] = useState('')
   const [email, setEmail] = useState('')
   const [platform, setPlatform] = useState(PLATFORMS[0])
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
 
-  const submit = async (e) => {
+  const submit = (e) => {
     e.preventDefault()
     setBusy(true)
     setError(null)
     try {
-      const created = await addContact({
+      addContact({
         full_name: fullName.trim(),
         email: email.trim(),
         platform,
+        source: 'manual',
       })
-      onAdded(created)
+      toast('They’ve been added to your audience.', { title: 'Contact added' })
       onClose()
     } catch (err) {
       setError(err?.message ?? 'Could not add contact.')
@@ -188,37 +190,13 @@ function Field({ label, children }) {
 
 export default function Audience() {
   const { user, loading: authLoading } = useAuth()
-  const [contacts, setContacts] = useState([])
-  const [status, setStatus] = useState('loading') // loading | ready | error
-  const [error, setError] = useState(null)
-  const [reloadKey, setReloadKey] = useState(0)
+  // Contacts + analytics now live in the shared, localStorage-backed store so
+  // the Public Profile lead form and vote widget update this view live.
+  const { contacts, analytics } = useData()
   const [showForm, setShowForm] = useState(false)
   const [search, setSearch] = useState('')
   const [platformFilter, setPlatformFilter] = useState('All')
-  const [view, setView] = useState('contacts') // contacts | studio
-
-  useEffect(() => {
-    if (!user) return undefined
-    let active = true
-
-    const run = async () => {
-      try {
-        const data = await fetchMyAudience()
-        if (!active) return
-        setContacts(data)
-        setStatus('ready')
-      } catch (e) {
-        if (!active) return
-        setError(e?.message ?? 'Failed to load your audience.')
-        setStatus('error')
-      }
-    }
-    run()
-
-    return () => {
-      active = false
-    }
-  }, [user, reloadKey])
+  const [view, setView] = useState('contacts') // contacts | studio | profile
 
   // Headline metrics — computed from the full (unfiltered) contact list.
   const metrics = useMemo(() => {
@@ -284,11 +262,6 @@ export default function Audience() {
     )
   }
 
-  const refresh = () => {
-    setStatus('loading')
-    setReloadKey((k) => k + 1)
-  }
-
   return (
     <div className="mx-auto max-w-5xl">
       {/* Header */}
@@ -306,22 +279,12 @@ export default function Audience() {
               ? 'Generate share-ready resources that attract high-value leads.'
               : view === 'profile'
                 ? 'Design the public page your followers reach from your bio link.'
-                : status === 'ready'
-                  ? `${contacts.length} contact${contacts.length === 1 ? '' : 's'} in your audience.`
-                  : 'Manage the people in your audience.'}
+                : `${contacts.length} contact${contacts.length === 1 ? '' : 's'} in your audience.`}
           </p>
         </div>
 
         {view === 'contacts' && (
           <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={refresh}
-              className="inline-flex size-9 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-zinc-400 transition-colors hover:text-zinc-100"
-              title="Refresh"
-            >
-              <RefreshCw className="size-4" />
-            </button>
             <button
               type="button"
               onClick={() => setShowForm(true)}
@@ -390,19 +353,7 @@ export default function Audience() {
 
       {/* Contacts body */}
       <div className={view === 'contacts' ? 'mt-7' : 'hidden'}>
-        {status === 'loading' && (
-          <p className="rounded-2xl border border-white/10 bg-zinc-950/60 p-8 text-center text-sm text-zinc-500">
-            Loading your audience…
-          </p>
-        )}
-
-        {status === 'error' && (
-          <p className="rounded-2xl border border-rose-500/20 bg-rose-500/5 p-8 text-center text-sm text-rose-400">
-            {error}
-          </p>
-        )}
-
-        {status === 'ready' && contacts.length === 0 && (
+        {contacts.length === 0 && (
           <div className="rounded-2xl border border-white/10 bg-zinc-950/60 p-10 text-center">
             <span className="mx-auto inline-flex size-12 items-center justify-center rounded-2xl bg-white/5">
               <UserPlus className="size-6 text-zinc-500" />
@@ -423,10 +374,10 @@ export default function Audience() {
           </div>
         )}
 
-        {status === 'ready' && contacts.length > 0 && (
+        {contacts.length > 0 && (
           <>
             {/* Summary cards */}
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
               <SummaryCard
                 icon={Users}
                 label="Total Audience"
@@ -441,6 +392,12 @@ export default function Audience() {
                     ? `${metrics.topCount} contact${metrics.topCount === 1 ? '' : 's'}`
                     : undefined
                 }
+              />
+              <SummaryCard
+                icon={Zap}
+                label="Profile Votes"
+                value={analytics.totalVotes ?? 0}
+                sub="from your public page"
               />
               <SummaryCard
                 icon={Activity}
@@ -537,12 +494,7 @@ export default function Audience() {
         )}
       </div>
 
-      {showForm && (
-        <AddContactModal
-          onClose={() => setShowForm(false)}
-          onAdded={(created) => setContacts((prev) => [created, ...prev])}
-        />
-      )}
+      {showForm && <AddContactModal onClose={() => setShowForm(false)} />}
     </div>
   )
 }
