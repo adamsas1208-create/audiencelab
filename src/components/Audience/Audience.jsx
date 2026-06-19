@@ -3,6 +3,7 @@ import {
   Activity,
   Mail,
   Plus,
+  Globe,
   RefreshCw,
   Search,
   Sparkles,
@@ -15,6 +16,7 @@ import { useAuth } from '../../context/auth-context'
 import { addContact, fetchMyAudience } from '../../lib/contacts'
 import AuthPanel from '../Auth/AuthPanel'
 import LeadMagnetStudio from './LeadMagnetStudio'
+import ProfileSettings from './ProfileSettings'
 
 const PLATFORMS = ['TikTok', 'YouTube', 'Instagram', 'X', 'LinkedIn', 'Other']
 // Filter tabs in the requested order (no "Other"; it still shows under "All").
@@ -302,9 +304,11 @@ export default function Audience() {
           <p className="mt-1 text-sm text-zinc-500">
             {view === 'studio'
               ? 'Generate share-ready resources that attract high-value leads.'
-              : status === 'ready'
-                ? `${contacts.length} contact${contacts.length === 1 ? '' : 's'} in your audience.`
-                : 'Manage the people in your audience.'}
+              : view === 'profile'
+                ? 'Design the public page your followers reach from your bio link.'
+                : status === 'ready'
+                  ? `${contacts.length} contact${contacts.length === 1 ? '' : 's'} in your audience.`
+                  : 'Manage the people in your audience.'}
           </p>
         </div>
 
@@ -356,12 +360,31 @@ export default function Audience() {
         >
           <Sparkles className="size-4" /> Lead Magnet Studio
         </button>
+        <button
+          type="button"
+          onClick={() => setView('profile')}
+          className={[
+            'inline-flex items-center gap-2 rounded-lg px-4 py-1.5 text-sm font-semibold transition-colors',
+            view === 'profile'
+              ? 'bg-turquoise/15 text-turquoise'
+              : 'text-zinc-400 hover:text-zinc-100',
+          ].join(' ')}
+        >
+          <Globe className="size-4" /> Public Profile
+        </button>
       </div>
 
       {/* Studio view */}
       {view === 'studio' && (
         <div className="mt-7">
           <LeadMagnetStudio />
+        </div>
+      )}
+
+      {/* Public profile settings view */}
+      {view === 'profile' && (
+        <div className="mt-7">
+          <ProfileSettings />
         </div>
       )}
 

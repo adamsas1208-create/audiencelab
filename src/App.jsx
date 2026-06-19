@@ -7,8 +7,24 @@ import Audience from './components/Audience/Audience'
 import VoteView from './components/VoteView'
 import CreatorStudio from './components/CreatorStudio'
 import CritiqueRoom from './components/CritiqueRoom'
+import PublicProfile from './components/PublicProfile/PublicProfile'
+
+// Lightweight public route: /p/<handle> renders a standalone, chrome-free
+// creator page (no sidebar/topbar). Anything else renders the authed app.
+function publicProfileHandle() {
+  if (typeof window === 'undefined') return null
+  const m = window.location.pathname.match(/^\/p\/([^/]+)\/?$/)
+  return m ? decodeURIComponent(m[1]) : null
+}
 
 export default function App() {
+  const handle = publicProfileHandle()
+  if (handle) return <PublicProfile handle={handle} />
+
+  return <AppShell />
+}
+
+function AppShell() {
   // A single active id drives both the sidebar highlight and the rendered view.
   // It can be a workspace id ('dashboard' | 'vote' | 'studio' | 'critique')
   // or a room id.
