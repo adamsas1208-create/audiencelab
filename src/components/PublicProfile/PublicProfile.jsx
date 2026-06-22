@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import {
   ArrowUpRight,
   BadgeCheck,
@@ -10,18 +10,6 @@ import {
   Users,
 } from 'lucide-react'
 import { useData } from '../../context/data-context'
-import { fetchRoomStats, castVote } from '../../lib/rooms'
-import { supabase } from '../../lib/supabaseClient'
-
-// Fallback poll so the vote widget always works, even with no DB connection.
-const LOCAL_POLL = {
-  id: null,
-  hooks: [
-    { id: 'local-1', text: 'A day-in-my-life vlog', votes: 42 },
-    { id: 'local-2', text: 'My honest gear review', votes: 31 },
-    { id: 'local-3', text: 'Behind the scenes of my process', votes: 18 },
-  ],
-}
 
 // Initials fallback when there's no avatar (or it fails to load).
 function initials(name, handle) {
@@ -266,66 +254,52 @@ function LeadMagnetForm() {
   )
 }
 
+// Per-option image with graceful fallback — a broken URL collapses to nothing
+// rather than showing a busted image icon on a follower's phone.
+function OptionImage({ src, alt }) {
+  const [ok, setOk] = useState(true)
+  if (!src || !ok) return null
+  return (
+    <div className="relative aspect-video w-full overflow-hidden bg-black/40">
+      <img
+        src={src}
+        alt={alt}
+        loading="lazy"
+        className="size-full object-cover transition-transform duration-500 group-hover:scale-105"
+        onError={() => setOk(false)}
+      />
+    </div>
+  )
+}
+
 function VoteSneakPeek() {
-  const { recordVote } = useData()
-  const [room, setRoom] = useState(null)
-  const [hooks, setHooks] = useState([])
+  // Read the creator's live poll straight from the shared store so a vote here
+  // updates the dashboard's distribution and total in real time.
+  const { polls, recordPollVote } = useData()
   const [votedId, setVotedId] = useState(null)
 
-  useEffect(() => {
-    let active = true
-    ;(async () => {
-      try {
-        const stats = await fetchRoomStats()
-        const pick =
-          stats.find((r) => r.flagship) ??
-          [...stats].sort((a, b) => (b.engagement ?? 0) - (a.engagement ?? 0))[0]
-        if (!pick) throw new Error('no rooms')
-        const { data } = await supabase
-          .from('hooks')
-          .select('id, text, votes')
-          .eq('room_id', pick.id)
-          .eq('is_active', true)
-          .order('votes', { ascending: false })
-          .limit(3)
-        if (!active) return
-        if (data && data.length) {
-          setRoom(pick)
-          setHooks(data)
-          return
-        }
-        throw new Error('no hooks')
-      } catch {
-        // Fall back to a local poll so the widget always renders.
-        if (active) {
-          setRoom(LOCAL_POLL)
-          setHooks(LOCAL_POLL.hooks)
-        }
-      }
-    })()
-    return () => {
-      active = false
-    }
-  }, [])
-
-  const total = useMemo(
-    () => hooks.reduce((s, h) => s + (h.votes || 0), 0) || 1,
-    [hooks],
+  const poll = useMemo(
+    () => polls.find((p) => p.active) ?? polls[0] ?? null,
+    [polls],
   )
 
-  if (!hooks.length) return null
+  const total = useMemo(
+    () => (poll ? poll.options.reduce((s, o) => s + (o.votes || 0), 0) : 0) || 1,
+    [poll],
+  )
 
-  const vote = (hookId) => {
+  // Visual poll? Lay the options out as a responsive image-card grid.
+  const hasImages = useMemo(
+    () => (poll ? poll.options.some((o) => o.image_url) : false),
+    [poll],
+  )
+
+  if (!poll) return null
+
+  const vote = (optionId) => {
     if (votedId) return
-    setVotedId(hookId)
-    setHooks((prev) =>
-      prev.map((h) => (h.id === hookId ? { ...h, votes: (h.votes || 0) + 1 } : h)),
-    )
-    recordVote() // bump the creator's global analytics
-    // Best-effort real vote when the poll came from a live room.
-    if (room?.id) {
-      castVote({ roomId: room.id, hookId }).catch(() => {})
-    }
+    setVotedId(optionId)
+    recordPollVote({ pollId: poll.id, optionId }) // flows to the creator's dashboard
   }
 
   return (
@@ -334,7 +308,7 @@ function VoteSneakPeek() {
         <div className="flex items-center gap-2 text-turquoise">
           <TrendingUp className="size-4" />
           <span className="text-[11px] font-bold uppercase tracking-wide">
-            Vote on my next video idea!
+            {poll.question}
           </span>
         </div>
         <span className="flex items-center gap-1 text-[11px] text-zinc-500">
@@ -343,38 +317,62 @@ function VoteSneakPeek() {
         </span>
       </div>
 
-      <div className="mt-3 space-y-2">
-        {hooks.map((h) => {
-          const pct = Math.round(((h.votes || 0) / total) * 100)
-          const isVoted = votedId === h.id
+      <div
+        className={
+          hasImages
+            ? 'al-poll-grid mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2'
+            : 'mt-3 space-y-2'
+        }
+      >
+        {poll.options.map((o) => {
+          const pct = Math.round(((o.votes || 0) / total) * 100)
+          const isVoted = votedId === o.id
+          const withImage = hasImages && !!o.image_url
           return (
             <button
-              key={h.id}
+              key={o.id}
               type="button"
-              onClick={() => vote(h.id)}
+              onClick={() => vote(o.id)}
               disabled={!!votedId}
               className={[
-                'relative w-full overflow-hidden rounded-xl border px-3.5 py-2.5 text-left transition-colors',
+                'group relative overflow-hidden text-left',
+                hasImages
+                  ? 'al-poll-card flex flex-col rounded-2xl border'
+                  : 'w-full rounded-xl border px-3.5 py-2.5 transition-all duration-300',
                 isVoted
-                  ? 'border-turquoise/50 bg-turquoise/10'
-                  : 'border-white/10 bg-white/[0.03] hover:border-turquoise/30',
+                  ? 'border-turquoise bg-turquoise/10 shadow-[0_0_26px_-4px_#34e0a1]'
+                  : 'border-white/10 bg-white/[0.03] hover:border-turquoise/60',
                 votedId && !isVoted ? 'opacity-70' : '',
               ].join(' ')}
             >
-              {votedId && (
+              {withImage && (
+                <div className="relative">
+                  <OptionImage src={o.image_url} alt={o.label} />
+                  {votedId && (
+                    <span className="absolute bottom-2 right-2 rounded-md bg-black/70 px-2 py-0.5 text-xs font-bold text-turquoise backdrop-blur">
+                      {pct}%
+                    </span>
+                  )}
+                </div>
+              )}
+              <span
+                className={['relative block', hasImages ? 'p-3' : ''].join(' ')}
+              >
                 <span
-                  className="absolute inset-y-0 left-0 bg-turquoise/10 transition-all duration-500"
-                  style={{ width: `${pct}%` }}
+                  className="al-speedo absolute inset-y-0 left-0 bg-turquoise/10"
+                  style={{ width: votedId ? `${pct}%` : '0%' }}
                   aria-hidden="true"
                 />
-              )}
-              <span className="relative flex items-center justify-between gap-3">
-                <span className="text-sm text-zinc-200">{h.text}</span>
-                {votedId && (
-                  <span className="shrink-0 text-xs font-bold text-turquoise">
-                    {pct}%
+                <span className="relative flex items-center justify-between gap-3">
+                  <span className="text-sm font-medium text-zinc-100">
+                    {o.label}
                   </span>
-                )}
+                  {votedId && !withImage && (
+                    <span className="shrink-0 text-xs font-bold text-turquoise">
+                      {pct}%
+                    </span>
+                  )}
+                </span>
               </span>
             </button>
           )

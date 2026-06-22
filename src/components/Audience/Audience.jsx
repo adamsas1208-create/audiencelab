@@ -4,6 +4,7 @@ import {
   Mail,
   Plus,
   Globe,
+  Radio,
   Search,
   Sparkles,
   TrendingUp,
@@ -16,6 +17,7 @@ import { useAuth } from '../../context/auth-context'
 import { useData } from '../../context/data-context'
 import AuthPanel from '../Auth/AuthPanel'
 import LeadMagnetStudio from './LeadMagnetStudio'
+import PollDashboard from './PollDashboard'
 import ProfileSettings from './ProfileSettings'
 
 const PLATFORMS = ['TikTok', 'YouTube', 'Instagram', 'X', 'LinkedIn', 'Other']
@@ -196,7 +198,7 @@ export default function Audience() {
   const [showForm, setShowForm] = useState(false)
   const [search, setSearch] = useState('')
   const [platformFilter, setPlatformFilter] = useState('All')
-  const [view, setView] = useState('contacts') // contacts | studio | profile
+  const [view, setView] = useState('contacts') // contacts | studio | profile | polls
 
   // Headline metrics — computed from the full (unfiltered) contact list.
   const metrics = useMemo(() => {
@@ -279,7 +281,9 @@ export default function Audience() {
               ? 'Generate share-ready resources that attract high-value leads.'
               : view === 'profile'
                 ? 'Design the public page your followers reach from your bio link.'
-                : `${contacts.length} contact${contacts.length === 1 ? '' : 's'} in your audience.`}
+                : view === 'polls'
+                  ? 'Live vote distribution and your most engaged superfans.'
+                  : `${contacts.length} contact${contacts.length === 1 ? '' : 's'} in your audience.`}
           </p>
         </div>
 
@@ -325,6 +329,18 @@ export default function Audience() {
         </button>
         <button
           type="button"
+          onClick={() => setView('polls')}
+          className={[
+            'inline-flex items-center gap-2 rounded-lg px-4 py-1.5 text-sm font-semibold transition-colors',
+            view === 'polls'
+              ? 'bg-turquoise/15 text-turquoise'
+              : 'text-zinc-400 hover:text-zinc-100',
+          ].join(' ')}
+        >
+          <Radio className="size-4" /> Poll Analytics
+        </button>
+        <button
+          type="button"
           onClick={() => setView('profile')}
           className={[
             'inline-flex items-center gap-2 rounded-lg px-4 py-1.5 text-sm font-semibold transition-colors',
@@ -341,6 +357,13 @@ export default function Audience() {
       {view === 'studio' && (
         <div className="mt-7">
           <LeadMagnetStudio />
+        </div>
+      )}
+
+      {/* Live poll analytics & superfans dashboard */}
+      {view === 'polls' && (
+        <div className="mt-7">
+          <PollDashboard onLaunchPoll={() => setView('profile')} />
         </div>
       )}
 

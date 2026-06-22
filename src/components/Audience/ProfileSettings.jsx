@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import {
   AtSign,
   BadgeCheck,
@@ -7,9 +8,31 @@ import {
   Image as ImageIcon,
   Lock,
   Play,
+  Radio,
+  Trash2,
   User,
 } from 'lucide-react'
 import { useData } from '../../context/data-context'
+
+// Quick-select imagery so creators can spin up a visual poll instantly without
+// hunting for URLs. Real, high-quality stock shots keyed to common content types.
+const IMAGE_PRESETS = [
+  {
+    label: 'Gaming Thumbnail',
+    url: 'https://images.unsplash.com/photo-1542751371-adc38448a05e?w=640&q=80&auto=format&fit=crop',
+  },
+  {
+    label: 'Vlog Thumbnail',
+    url: 'https://images.unsplash.com/photo-1492619375914-88005aa9e8fb?w=640&q=80&auto=format&fit=crop',
+  },
+  {
+    label: 'Tech Setup',
+    url: 'https://images.unsplash.com/photo-1593642632823-8f785ba67e45?w=640&q=80&auto=format&fit=crop',
+  },
+]
+
+// A, B, C… so each option reads like the familiar "Option A / Option B" poll.
+const OPTION_LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
 
 // Where the live profile lives. Uses the current origin so it works in dev,
 // preview, and production without hardcoding the domain.
@@ -35,13 +58,112 @@ function Field({ icon: Icon, label, hint, children }) {
 const inputCls =
   'w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-sm text-zinc-200 placeholder:text-zinc-600 focus:border-turquoise/40 focus:outline-none'
 
+// One option's image controls: a live preview, a URL field, quick presets, and
+// a clear button. The image_url is optional — text-only options still work.
+function OptionImageField({ letter, option, onChange }) {
+  const [broken, setBroken] = useState(false)
+  const url = option.image_url || ''
+  const showPreview = url && !broken
+
+  return (
+    <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
+      <div className="flex items-center gap-2">
+        <span className="inline-flex size-6 items-center justify-center rounded-md bg-turquoise/15 text-xs font-bold text-turquoise">
+          {letter}
+        </span>
+        <span className="min-w-0 flex-1 truncate text-sm font-medium text-zinc-200">
+          {option.label}
+        </span>
+      </div>
+
+      {/* Preview / empty drop-zone */}
+      <div className="mt-3 aspect-video w-full overflow-hidden rounded-lg border border-white/10 bg-black/40">
+        {showPreview ? (
+          <img
+            src={url}
+            alt={option.label}
+            className="size-full object-cover"
+            onError={() => setBroken(true)}
+          />
+        ) : (
+          <div className="flex size-full flex-col items-center justify-center gap-1 text-zinc-600">
+            <ImageIcon className="size-5" />
+            <span className="text-[11px]">{broken ? 'Image failed to load' : 'No image'}</span>
+          </div>
+        )}
+      </div>
+
+      <div className="mt-3 flex items-center gap-2">
+        <input
+          type="url"
+          value={url}
+          onChange={(e) => {
+            setBroken(false)
+            onChange(e.target.value)
+          }}
+          placeholder="https://…/option.jpg"
+          className={inputCls}
+        />
+        {url && (
+          <button
+            type="button"
+            onClick={() => {
+              setBroken(false)
+              onChange('')
+            }}
+            className="inline-flex size-9 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-white/5 text-zinc-400 transition-colors hover:border-rose-400/40 hover:text-rose-400"
+            title="Remove image"
+            aria-label={`Remove image from option ${letter}`}
+          >
+            <Trash2 className="size-4" />
+          </button>
+        )}
+      </div>
+
+      {/* Quick-select presets for fast testing with real imagery */}
+      <div className="mt-2.5 flex flex-wrap gap-1.5">
+        {IMAGE_PRESETS.map((preset) => {
+          const selected = url === preset.url
+          return (
+            <button
+              key={preset.label}
+              type="button"
+              onClick={() => {
+                setBroken(false)
+                onChange(preset.url)
+              }}
+              aria-pressed={selected}
+              className={[
+                'rounded-lg border px-2.5 py-1 text-[11px] font-semibold transition-colors',
+                selected
+                  ? 'border-turquoise/50 bg-turquoise/15 text-turquoise'
+                  : 'border-white/10 bg-white/5 text-zinc-400 hover:border-turquoise/30 hover:text-zinc-100',
+              ].join(' ')}
+            >
+              {preset.label}
+            </button>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 export default function ProfileSettings() {
   // Edits write straight to the shared store, so the Public Profile view
   // (and any open /p/<handle> tab) updates instantly.
-  const { profile, updateProfile, toast } = useData()
+  const { profile, updateProfile, polls, setActivePoll, updatePollOption, toast } =
+    useData()
+
+  const activePoll = polls.find((p) => p.active) ?? null
 
   const set = (key) => (e) => updateProfile({ [key]: e.target.value })
   const togglePublic = () => updateProfile({ is_public: !profile.is_public })
+
+  const choosePoll = (pollId) => {
+    setActivePoll(pollId)
+    toast('Your public page now shows this poll.', { title: 'Live poll updated' })
+  }
 
   const canViewLive = profile.is_public && profile.handle
 
@@ -172,6 +294,99 @@ export default function ProfileSettings() {
                 ].join(' ')}
               />
             </button>
+          </div>
+        </div>
+
+        {/* Active live poll picker — drives the vote widget on the public page */}
+        <div className="lg:col-span-2">
+          <div className="rounded-2xl border border-white/10 bg-zinc-950/60 p-5">
+            <div className="flex items-center gap-2">
+              <Radio className="size-4 text-turquoise" />
+              <h4 className="text-sm font-bold text-zinc-50">Live poll on your page</h4>
+            </div>
+            <p className="mt-0.5 text-sm text-zinc-500">
+              Pick which poll your followers vote on. Switches instantly — votes
+              feed your Poll Analytics dashboard.
+            </p>
+
+            <div className="mt-4 grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
+              {polls.map((poll) => {
+                const total = poll.options.reduce((s, o) => s + (o.votes || 0), 0)
+                const isActive = !!poll.active
+                return (
+                  <button
+                    key={poll.id}
+                    type="button"
+                    onClick={() => choosePoll(poll.id)}
+                    aria-pressed={isActive}
+                    className={[
+                      'rounded-xl border px-4 py-3 text-left transition-colors',
+                      isActive
+                        ? 'border-turquoise/50 bg-turquoise/10'
+                        : 'border-white/10 bg-white/[0.03] hover:border-turquoise/30',
+                    ].join(' ')}
+                    style={isActive ? { boxShadow: '0 0 18px -6px #34e0a1' } : undefined}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-sm font-semibold text-zinc-100">
+                        {poll.question}
+                      </span>
+                      {isActive && (
+                        <span className="inline-flex shrink-0 items-center gap-1 text-[10px] font-bold uppercase tracking-wide text-turquoise">
+                          <span className="size-1.5 animate-pulse rounded-full bg-turquoise" />
+                          Live
+                        </span>
+                      )}
+                    </div>
+                    <p className="mt-1 text-xs text-zinc-500">
+                      {poll.options.length} options · {total.toLocaleString()} votes
+                    </p>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        </div>
+
+        {/* Visual Image Polls — attach imagery to the live poll's options */}
+        <div className="lg:col-span-2">
+          <div className="rounded-2xl border border-white/10 bg-zinc-950/60 p-5">
+            <div className="flex items-center gap-2">
+              <ImageIcon className="size-4 text-turquoise" />
+              <h4 className="text-sm font-bold text-zinc-50">Visual poll images</h4>
+            </div>
+            <p className="mt-0.5 text-sm text-zinc-500">
+              Add an image to each option to let followers vote on thumbnails,
+              merch, or video ideas. Pictures show on your public page instantly.
+            </p>
+
+            {!activePoll ? (
+              <p className="mt-4 rounded-xl border border-white/10 bg-white/[0.03] p-4 text-sm text-zinc-500">
+                Pick a live poll above to add images to its options.
+              </p>
+            ) : (
+              <div className="mt-4 space-y-4">
+                <p className="text-xs font-semibold uppercase tracking-wide text-turquoise/80">
+                  {activePoll.question}
+                </p>
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  {activePoll.options.map((option, i) => (
+                    <OptionImageField
+                      key={option.id}
+                      letter={OPTION_LETTERS[i] ?? i + 1}
+                      option={option}
+                      onChange={(image_url) =>
+                        updatePollOption({
+                          pollId: activePoll.id,
+                          optionId: option.id,
+                          patch: { image_url },
+                        })
+                      }
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
