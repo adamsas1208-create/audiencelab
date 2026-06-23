@@ -129,11 +129,186 @@ body {
     0 0 0 1px rgba(52, 224, 161, 0.7);
   z-index: 2;
 }
+/* AI critique laser sweeping up & down an image thumbnail during a scan. */
+@keyframes al-scan-line {
+  0% {
+    top: -6%;
+    opacity: 0.25;
+  }
+  50% {
+    top: 100%;
+    opacity: 1;
+  }
+  100% {
+    top: -6%;
+    opacity: 0.25;
+  }
+}
+.al-scan-line {
+  animation: al-scan-line 1.15s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+}
+
+/* Pulsing aura for the cyberpunk "Ask AI" button. */
+@keyframes al-ai-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 18px rgba(52, 224, 161, 0.25),
+      inset 0 0 12px rgba(52, 224, 161, 0.08);
+  }
+  50% {
+    box-shadow: 0 0 36px rgba(52, 224, 161, 0.55),
+      inset 0 0 18px rgba(52, 224, 161, 0.18);
+  }
+}
+.al-ai-pulse {
+  animation: al-ai-pulse 1.8s ease-in-out infinite;
+}
+
+/* Soft reveal for AI result cards/overlays. */
+@keyframes al-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.al-fade-in {
+  animation: al-fade-in 0.4s ease-out both;
+}
+
+/* High-end camera shake for the debate arena on Omega's critiques. */
+@keyframes al-shake {
+  0%,
+  100% {
+    transform: translate(0, 0) rotate(0deg);
+  }
+  20% {
+    transform: translate(-4px, 2px) rotate(-0.45deg);
+  }
+  40% {
+    transform: translate(4px, -2px) rotate(0.45deg);
+  }
+  60% {
+    transform: translate(-3px, 1px) rotate(-0.3deg);
+  }
+  80% {
+    transform: translate(3px, -1px) rotate(0.3deg);
+  }
+}
+.al-shake {
+  animation: al-shake 0.42s cubic-bezier(0.36, 0.07, 0.19, 0.97);
+}
+
+/* Full-screen critical-hit color flashes (crimson on Omega, mint on Alpha). */
+@keyframes al-flash {
+  0% {
+    opacity: 0;
+  }
+  18% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+.al-flash-crimson {
+  background: radial-gradient(
+    circle at center,
+    rgba(255, 40, 70, 0.5),
+    rgba(190, 0, 30, 0.12)
+  );
+  animation: al-flash 0.62s ease-out;
+}
+.al-flash-mint {
+  background: radial-gradient(
+    circle at center,
+    rgba(52, 224, 161, 0.42),
+    rgba(52, 224, 161, 0.08)
+  );
+  animation: al-flash 0.62s ease-out;
+}
+
+/* Flashing gold intro title for the takeover. */
+@keyframes al-intro-flash {
+  0%,
+  100% {
+    opacity: 0.55;
+    text-shadow: 0 0 12px rgba(250, 204, 21, 0.4);
+  }
+  50% {
+    opacity: 1;
+    text-shadow: 0 0 34px rgba(250, 204, 21, 0.95);
+  }
+}
+.al-intro-flash {
+  animation: al-intro-flash 0.9s ease-in-out infinite;
+}
+
+/* Massive gold verdict card scale-up. */
+@keyframes al-verdict-pop {
+  0% {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+  60% {
+    opacity: 1;
+    transform: scale(1.05);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+.al-verdict-pop {
+  animation: al-verdict-pop 0.7s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+/* Sharp teletype caret blink. */
+@keyframes al-caret {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0;
+  }
+}
+.al-caret {
+  animation: al-caret 0.8s steps(1) infinite;
+}
+
+/* Gold verdict card entrance with an elastic snap. */
+@keyframes al-verdict-in {
+  from {
+    opacity: 0;
+    transform: scale(0.94) translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.al-verdict-in {
+  animation: al-verdict-in 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .al-modal-in,
   .al-modal-aura,
   .al-backdrop-in,
-  .al-speedo {
+  .al-speedo,
+  .al-scan-line,
+  .al-ai-pulse,
+  .al-fade-in,
+  .al-shake,
+  .al-caret,
+  .al-verdict-in,
+  .al-flash-crimson,
+  .al-flash-mint,
+  .al-intro-flash,
+  .al-verdict-pop {
     animation: none;
     transition: none;
   }
