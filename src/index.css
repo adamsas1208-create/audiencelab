@@ -1,14 +1,61 @@
 @import 'tailwindcss';
 
-/* AudienceLab brand palette */
+/* ============================================================
+   "Living Editorial" — the whole app breathes with the time of
+   day. AtmosphereProvider writes the --al-* variables onto :root
+   every 30s; the @theme block below points Tailwind's core tokens
+   at them, so every zinc surface, white hairline, black scrim and
+   turquoise accent in the entire app follows the sky. Semantic
+   data colors (mint=Coach, crimson=Critic, gold=Pacing) keep their
+   meaning — the accent token itself shifts from deep bottle-green
+   on daytime ivory to glowing mint after dark.
+   ============================================================ */
 @theme {
-  --color-turquoise: #34e0a1;
-  --color-turquoise-glow: #34e0a1;
-  --color-periwinkle: #6260ff;
+  --color-turquoise: var(--al-tq);
+  --color-turquoise-glow: var(--al-tq);
+  --color-periwinkle: var(--al-peri);
+
+  --color-zinc-50: var(--al-z50);
+  --color-zinc-100: var(--al-z100);
+  --color-zinc-200: var(--al-z200);
+  --color-zinc-300: var(--al-z300);
+  --color-zinc-400: var(--al-z400);
+  --color-zinc-500: var(--al-z500);
+  --color-zinc-600: var(--al-z600);
+  --color-zinc-700: var(--al-z700);
+  --color-zinc-800: var(--al-z800);
+  --color-zinc-900: var(--al-z900);
+  --color-zinc-950: var(--al-z950);
+  --color-white: var(--al-white);
+  --color-black: var(--al-black);
+
+  --font-serif: 'Fraunces', Georgia, 'Times New Roman', serif;
+  --font-mono: 'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas,
+    monospace;
 }
 
+/* Daytime defaults — AtmosphereProvider overwrites these before first paint,
+   these exist so the cascade never resolves to nothing. */
 :root {
-  color-scheme: dark;
+  --al-card-shadow: 0 18px 44px -22px rgba(62, 52, 34, 0.22),
+    0 2px 10px -5px rgba(62, 52, 34, 0.1);
+  --al-paper: #f0ede3;
+  --al-z50: #16130e;
+  --al-z100: #201c15;
+  --al-z200: #2e2920;
+  --al-z300: #453e31;
+  --al-z400: #6a6252;
+  --al-z500: #877e6b;
+  --al-z600: #a39a86;
+  --al-z700: #c6beac;
+  --al-z800: #dfd9ca;
+  --al-z900: #ece8dc;
+  --al-z950: #fcfbf7;
+  --al-white: #17140f;
+  --al-black: #fbf8f1;
+  --al-tq: #147a56;
+  --al-peri: #4b48a8;
+  color-scheme: light;
 }
 
 html,
@@ -19,14 +66,65 @@ body,
 
 body {
   margin: 0;
-  background-color: #000000;
+  background-color: var(--al-paper);
+  transition: background-color 1.4s linear;
   font-family: 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI',
     Roboto, Helvetica, Arial, sans-serif;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
 
-/* Slim, dark scrollbars to match the premium dark theme */
+/* Editorial display type — Fraunces with a large optical size, used on hero
+   headlines. The breathe variant slowly oscillates the optical axis so the
+   headline feels alive under a patient eye. */
+.al-display {
+  font-family: var(--font-serif);
+  font-variation-settings: 'opsz' 132, 'wght' 430;
+  letter-spacing: -0.02em;
+}
+@keyframes al-breathe {
+  0%,
+  100% {
+    font-variation-settings: 'opsz' 132, 'wght' 430;
+  }
+  50% {
+    font-variation-settings: 'opsz' 104, 'wght' 396;
+  }
+}
+.al-breathe {
+  animation: al-breathe 9s ease-in-out infinite;
+}
+
+/* Frosted paper surface for chrome (header/sidebar) — follows the palette. */
+.al-surface-blur {
+  background: color-mix(in oklab, var(--al-paper) 78%, transparent);
+  backdrop-filter: blur(18px) saturate(115%);
+  -webkit-backdrop-filter: blur(18px) saturate(115%);
+}
+
+/* Living glass surfaces — translucent cards the sky genuinely reads through.
+   Single source of truth for the Glass component AND the mechanical
+   `bg-zinc-950/60 → al-glass` migration. Tint uses the atmosphere's deep
+   surface token so glass is paper-bright by day, navy after dark. */
+.al-glass {
+  background: color-mix(in oklab, var(--al-z950) var(--al-glass-tint, 42%), transparent);
+  backdrop-filter: blur(24px) saturate(135%);
+  -webkit-backdrop-filter: blur(24px) saturate(135%);
+  /* Light phases float cards on a soft warm shadow; fades to none at night. */
+  box-shadow: var(--al-card-shadow, none);
+}
+.al-glass-thin {
+  background: color-mix(in oklab, var(--al-z950) 24%, transparent);
+  backdrop-filter: blur(12px) saturate(120%);
+  -webkit-backdrop-filter: blur(12px) saturate(120%);
+}
+.al-glass-thick {
+  background: color-mix(in oklab, var(--al-z950) 70%, transparent);
+  backdrop-filter: blur(24px) saturate(140%);
+  -webkit-backdrop-filter: blur(24px) saturate(140%);
+}
+
+/* Slim scrollbars that follow the atmosphere */
 ::-webkit-scrollbar {
   width: 10px;
   height: 10px;
@@ -35,12 +133,13 @@ body {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: #27272a;
+  background: color-mix(in oklab, var(--al-white) 20%, transparent);
   border-radius: 9999px;
-  border: 2px solid #000000;
+  border: 2px solid transparent;
+  background-clip: padding-box;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #34e0a1;
+  background: var(--al-tq);
 }
 
 /* Toast entrance — used by the global Toaster. */
@@ -97,11 +196,11 @@ body {
 @keyframes al-modal-aura {
   0%,
   100% {
-    box-shadow: 0 0 40px rgba(46, 213, 115, 0.15),
+    box-shadow: 0 0 40px color-mix(in oklab, var(--al-tq) 15%, transparent),
       0 24px 70px -20px rgba(0, 0, 0, 0.8);
   }
   50% {
-    box-shadow: 0 0 64px rgba(46, 213, 115, 0.28),
+    box-shadow: 0 0 64px color-mix(in oklab, var(--al-tq) 28%, transparent),
       0 24px 70px -20px rgba(0, 0, 0, 0.8);
   }
 }
@@ -129,35 +228,16 @@ body {
     0 0 0 1px rgba(52, 224, 161, 0.7);
   z-index: 2;
 }
-/* AI critique laser sweeping up & down an image thumbnail during a scan. */
-@keyframes al-scan-line {
-  0% {
-    top: -6%;
-    opacity: 0.25;
-  }
-  50% {
-    top: 100%;
-    opacity: 1;
-  }
-  100% {
-    top: -6%;
-    opacity: 0.25;
-  }
-}
-.al-scan-line {
-  animation: al-scan-line 1.15s cubic-bezier(0.45, 0, 0.55, 1) infinite;
-}
-
 /* Pulsing aura for the cyberpunk "Ask AI" button. */
 @keyframes al-ai-pulse {
   0%,
   100% {
-    box-shadow: 0 0 18px rgba(52, 224, 161, 0.25),
-      inset 0 0 12px rgba(52, 224, 161, 0.08);
+    box-shadow: 0 0 18px color-mix(in oklab, var(--al-tq) 25%, transparent),
+      inset 0 0 12px color-mix(in oklab, var(--al-tq) 8%, transparent);
   }
   50% {
-    box-shadow: 0 0 36px rgba(52, 224, 161, 0.55),
-      inset 0 0 18px rgba(52, 224, 161, 0.18);
+    box-shadow: 0 0 36px color-mix(in oklab, var(--al-tq) 55%, transparent),
+      inset 0 0 18px color-mix(in oklab, var(--al-tq) 18%, transparent);
   }
 }
 .al-ai-pulse {
@@ -231,6 +311,45 @@ body {
   animation: al-flash 0.62s ease-out;
 }
 
+/* Violent screen-wide color inversion for the spiciest insults — a strobing
+   white veil over an inverted backdrop to genuinely shock the viewer. */
+@keyframes al-heavy-flash {
+  0% {
+    opacity: 0;
+  }
+  12% {
+    opacity: 1;
+  }
+  34% {
+    opacity: 0.12;
+  }
+  56% {
+    opacity: 0.9;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+.al-heavy-flash {
+  background: rgba(255, 255, 255, 0.9);
+  backdrop-filter: invert(1) hue-rotate(180deg) contrast(1.2);
+  -webkit-backdrop-filter: invert(1) hue-rotate(180deg) contrast(1.2);
+  animation: al-heavy-flash 0.82s ease-out;
+}
+
+/* Slim, dark scrollbar for the debate log so long fights scroll elegantly. */
+.al-duel-log {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
+}
+.al-duel-log::-webkit-scrollbar {
+  width: 6px;
+}
+.al-duel-log::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.18);
+  border-radius: 9999px;
+}
+
 /* Flashing gold intro title for the takeover. */
 @keyframes al-intro-flash {
   0%,
@@ -294,12 +413,84 @@ body {
   animation: al-verdict-in 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) both;
 }
 
+/* ===== Cinematic "AI Brain" loading experience ===== */
+
+/* Shimmering skeleton sweep — the glowing placeholder for a loading dashboard.
+   A mint-tinted highlight glides across a near-black surface. */
+@keyframes al-skeleton {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+.al-skeleton {
+  background: linear-gradient(
+    100deg,
+    rgba(255, 255, 255, 0.03) 30%,
+    rgba(52, 224, 161, 0.11) 48%,
+    rgba(98, 96, 255, 0.09) 56%,
+    rgba(255, 255, 255, 0.03) 74%
+  );
+  background-size: 200% 100%;
+  animation: al-skeleton 1.6s ease-in-out infinite;
+}
+
+/* Breathing neon orb behind the AI-brain glyph — mint→periwinkle pulse. */
+@keyframes al-brain-orb {
+  0%,
+  100% {
+    box-shadow: 0 0 44px 10px color-mix(in oklab, var(--al-tq) 35%, transparent),
+      inset 0 0 26px color-mix(in oklab, var(--al-tq) 30%, transparent);
+    transform: scale(1);
+  }
+  50% {
+    box-shadow: 0 0 90px 22px color-mix(in oklab, var(--al-peri) 50%, transparent),
+      inset 0 0 40px color-mix(in oklab, var(--al-tq) 50%, transparent);
+    transform: scale(1.07);
+  }
+}
+.al-brain-orb {
+  animation: al-brain-orb 2.5s ease-in-out infinite;
+}
+
+/* Flowing sheen for indeterminate progress bars and the retention heatmap —
+   the gradient drifts sideways to feel alive. */
+@keyframes al-heat-flow {
+  0% {
+    background-position: 0% 50%;
+  }
+  100% {
+    background-position: 200% 50%;
+  }
+}
+.al-heat-flow {
+  background-size: 200% 100%;
+  animation: al-heat-flow 3.2s linear infinite;
+}
+
+/* Retention-heatmap node dot — a soft, glowing pulse in its own accent color. */
+@keyframes al-node-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    filter: brightness(1);
+  }
+  50% {
+    transform: scale(1.18);
+    filter: brightness(1.35);
+  }
+}
+.al-node-pulse {
+  animation: al-node-pulse 2s ease-in-out infinite;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .al-modal-in,
   .al-modal-aura,
   .al-backdrop-in,
   .al-speedo,
-  .al-scan-line,
   .al-ai-pulse,
   .al-fade-in,
   .al-shake,
@@ -307,8 +498,14 @@ body {
   .al-verdict-in,
   .al-flash-crimson,
   .al-flash-mint,
+  .al-heavy-flash,
   .al-intro-flash,
-  .al-verdict-pop {
+  .al-verdict-pop,
+  .al-skeleton,
+  .al-brain-orb,
+  .al-heat-flow,
+  .al-node-pulse,
+  .al-breathe {
     animation: none;
     transition: none;
   }
@@ -318,7 +515,8 @@ body {
    Stays nearly invisible until the row is hovered. */
 .sidebar-scroll {
   scrollbar-width: thin;
-  scrollbar-color: #18181b transparent;
+  scrollbar-color: color-mix(in oklab, var(--al-white) 16%, transparent)
+    transparent;
 }
 .sidebar-scroll::-webkit-scrollbar {
   width: 6px;
@@ -327,13 +525,13 @@ body {
   background: transparent;
 }
 .sidebar-scroll::-webkit-scrollbar-thumb {
-  background: #1c1c20;
+  background: color-mix(in oklab, var(--al-white) 12%, transparent);
   border: none;
   border-radius: 9999px;
 }
 .sidebar-scroll:hover::-webkit-scrollbar-thumb {
-  background: #2a2a30;
+  background: color-mix(in oklab, var(--al-white) 22%, transparent);
 }
 .sidebar-scroll::-webkit-scrollbar-thumb:hover {
-  background: #34e0a1;
+  background: var(--al-tq);
 }

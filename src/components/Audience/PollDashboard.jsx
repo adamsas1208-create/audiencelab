@@ -9,7 +9,12 @@ import {
   Trophy,
   Users,
 } from 'lucide-react'
+import { motion } from 'motion/react'
 import { useData } from '../../context/data-context'
+import Glass from '../../design/components/Glass'
+import TiltCard from '../../design/components/TiltCard'
+import { rise } from '../../design/tokens/motion'
+import SharePollButton from '../SharePollButton'
 
 // Shared brand mint used across the app.
 const MINT = '#34e0a1'
@@ -90,7 +95,7 @@ function RankBadge({ rank }) {
     return (
       <span
         className="inline-flex size-7 items-center justify-center rounded-lg bg-turquoise/10 text-turquoise ring-1 ring-turquoise/25"
-        style={{ boxShadow: '0 0 14px -5px #34e0a1' }}
+        style={{ boxShadow: '0 0 14px -5px var(--al-tq)' }}
       >
         <Icon className="size-3.5" />
       </span>
@@ -136,7 +141,7 @@ function PollCard({ poll }) {
   }, [])
 
   return (
-    <div className="relative overflow-hidden rounded-2xl border border-white/10 bg-zinc-950/60 p-5">
+    <Glass className="relative overflow-hidden rounded-2xl p-5">
       <div className="pointer-events-none absolute -right-10 -top-12 size-32 rounded-full bg-turquoise/10 blur-2xl" />
 
       <div className="relative flex items-start justify-between gap-3">
@@ -201,7 +206,7 @@ function PollCard({ poll }) {
           votes
         </span>
       </div>
-    </div>
+    </Glass>
   )
 }
 
@@ -228,15 +233,15 @@ export default function PollDashboard({ onLaunchPoll }) {
         <div className="flex items-start gap-3">
           <span
             className="inline-flex size-10 shrink-0 items-center justify-center rounded-xl bg-turquoise/10 ring-1 ring-turquoise/25"
-            style={{ boxShadow: '0 0 22px -8px #34e0a1' }}
+            style={{ boxShadow: '0 0 22px -8px var(--al-tq)' }}
           >
             <Radio
               className="size-5 text-turquoise"
-              style={{ filter: 'drop-shadow(0 0 6px #34e0a1)' }}
+              style={{ filter: 'drop-shadow(0 0 6px var(--al-tq))' }}
             />
           </span>
           <div>
-            <h3 className="text-lg font-bold tracking-tight text-zinc-50">
+            <h3 className="al-display text-2xl text-zinc-50 sm:text-3xl">
               Live Poll Analytics
             </h3>
             <p className="mt-0.5 text-sm text-zinc-500">
@@ -245,14 +250,17 @@ export default function PollDashboard({ onLaunchPoll }) {
           </div>
         </div>
 
-        <button
-          type="button"
-          onClick={onLaunchPoll}
-          className="inline-flex items-center gap-2 rounded-xl bg-turquoise px-4 py-2.5 text-sm font-bold text-black transition-all hover:brightness-110 active:scale-[0.98]"
-          style={{ boxShadow: '0 0 22px -4px #34e0a1' }}
-        >
-          <Rocket className="size-4" /> Launch New Live Poll
-        </button>
+        <div className="flex flex-wrap items-center gap-3">
+          <SharePollButton />
+          <button
+            type="button"
+            onClick={onLaunchPoll}
+            className="inline-flex items-center gap-2 rounded-xl bg-turquoise px-4 py-2.5 text-sm font-bold text-black transition-all hover:brightness-110 active:scale-[0.98]"
+            style={{ boxShadow: '0 0 22px -4px var(--al-tq)' }}
+          >
+            <Rocket className="size-4" /> Launch New Live Poll
+          </button>
+        </div>
       </div>
 
       {/* Poll Performance Breakdown */}
@@ -266,13 +274,23 @@ export default function PollDashboard({ onLaunchPoll }) {
       </div>
 
       {sortedPolls.length === 0 ? (
-        <p className="mt-4 rounded-2xl border border-white/10 bg-zinc-950/60 p-8 text-center text-sm text-zinc-500">
+        <Glass as="p" className="mt-4 rounded-2xl p-8 text-center text-sm text-zinc-500">
           No polls yet — launch one to start collecting votes.
-        </p>
+        </Glass>
       ) : (
         <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
-          {sortedPolls.map((poll) => (
-            <PollCard key={poll.id} poll={poll} />
+          {sortedPolls.map((poll, i) => (
+            <motion.div
+              key={poll.id}
+              custom={i}
+              initial="hidden"
+              animate="shown"
+              variants={rise}
+            >
+              <TiltCard className="h-full">
+                <PollCard poll={poll} />
+              </TiltCard>
+            </motion.div>
           ))}
         </div>
       )}
@@ -286,12 +304,12 @@ export default function PollDashboard({ onLaunchPoll }) {
       </div>
 
       {superfans.length === 0 ? (
-        <p className="mt-4 rounded-2xl border border-white/10 bg-zinc-950/60 p-8 text-center text-sm text-zinc-500">
+        <Glass as="p" className="mt-4 rounded-2xl p-8 text-center text-sm text-zinc-500">
           No engagement scores yet. As followers join and vote, your top fans
           will rise to the top here.
-        </p>
+        </Glass>
       ) : (
-        <div className="mt-4 overflow-hidden rounded-2xl border border-white/10 bg-zinc-950/60">
+        <Glass className="mt-4 overflow-hidden rounded-2xl">
           <table className="w-full text-left text-sm">
             <thead>
               <tr className="border-b border-white/10 text-[11px] uppercase tracking-wide text-zinc-500">
@@ -304,8 +322,12 @@ export default function PollDashboard({ onLaunchPoll }) {
             </thead>
             <tbody>
               {superfans.map((c, i) => (
-                <tr
+                <motion.tr
                   key={c.id}
+                  custom={i}
+                  initial="hidden"
+                  animate="shown"
+                  variants={rise}
                   className="border-b border-white/[0.06] transition-colors last:border-0 hover:bg-white/[0.02]"
                 >
                   <td className="px-5 py-3.5">
@@ -332,11 +354,11 @@ export default function PollDashboard({ onLaunchPoll }) {
                   <td className="px-5 py-3.5 text-right">
                     <EngagementBadge score={c.engagement_score} />
                   </td>
-                </tr>
+                </motion.tr>
               ))}
             </tbody>
           </table>
-        </div>
+        </Glass>
       )}
     </div>
   )

@@ -47,7 +47,7 @@ function PlatformBadge({ platform }) {
 
 function SummaryCard({ icon: Icon, label, value, sub }) {
   return (
-    <div className="relative overflow-hidden rounded-2xl border border-white/10 bg-zinc-950/60 p-5">
+    <div className="relative overflow-hidden rounded-2xl border border-white/10 al-glass p-5">
       <div className="pointer-events-none absolute -right-10 -top-10 size-28 rounded-full bg-turquoise/10 blur-2xl" />
       <div className="relative flex items-center justify-between">
         <span className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">
@@ -56,7 +56,7 @@ function SummaryCard({ icon: Icon, label, value, sub }) {
         <span className="inline-flex size-8 items-center justify-center rounded-lg bg-turquoise/10 ring-1 ring-turquoise/25">
           <Icon
             className="size-4 text-turquoise"
-            style={{ filter: 'drop-shadow(0 0 6px #34e0a1)' }}
+            style={{ filter: 'drop-shadow(0 0 6px var(--al-tq))' }}
           />
         </span>
       </div>
@@ -76,12 +76,12 @@ function AddContactModal({ onClose }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
 
-  const submit = (e) => {
+  const submit = async (e) => {
     e.preventDefault()
     setBusy(true)
     setError(null)
     try {
-      addContact({
+      await addContact({
         full_name: fullName.trim(),
         email: email.trim(),
         platform,
@@ -169,7 +169,7 @@ function AddContactModal({ onClose }) {
             type="submit"
             disabled={busy}
             className="inline-flex items-center gap-2 rounded-lg bg-turquoise px-4 py-2 text-sm font-semibold text-black transition-all hover:brightness-110 disabled:opacity-50"
-            style={{ boxShadow: '0 0 18px -4px #34e0a188' }}
+            style={{ boxShadow: '0 0 18px -4px color-mix(in oklab, var(--al-tq) 53%, transparent)' }}
           >
             {busy ? 'Adding…' : 'Add contact'}
           </button>
@@ -249,7 +249,7 @@ export default function Audience() {
       <div className="mx-auto flex max-w-md flex-col items-center pt-10 text-center">
         <span
           className="inline-flex size-12 items-center justify-center rounded-2xl bg-turquoise/10 ring-1 ring-turquoise/25"
-          style={{ boxShadow: '0 0 22px -8px #34e0a1' }}
+          style={{ boxShadow: '0 0 22px -8px var(--al-tq)' }}
         >
           <Users className="size-6 text-turquoise" />
         </span>
@@ -273,7 +273,7 @@ export default function Audience() {
             <Users className="size-3" />
             Audience
           </span>
-          <h2 className="text-2xl font-bold tracking-tight text-zinc-50">
+          <h2 className="al-display text-4xl text-zinc-50 sm:text-5xl">
             Your contacts
           </h2>
           <p className="mt-1 text-sm text-zinc-500">
@@ -293,7 +293,7 @@ export default function Audience() {
               type="button"
               onClick={() => setShowForm(true)}
               className="inline-flex items-center gap-2 rounded-xl bg-turquoise px-4 py-2 text-sm font-semibold text-black transition-all hover:brightness-110"
-              style={{ boxShadow: '0 0 18px -4px #34e0a188' }}
+              style={{ boxShadow: '0 0 18px -4px color-mix(in oklab, var(--al-tq) 53%, transparent)' }}
             >
               <Plus className="size-4" /> Add contact
             </button>
@@ -377,7 +377,7 @@ export default function Audience() {
       {/* Contacts body */}
       <div className={view === 'contacts' ? 'mt-7' : 'hidden'}>
         {contacts.length === 0 && (
-          <div className="rounded-2xl border border-white/10 bg-zinc-950/60 p-10 text-center">
+          <div className="rounded-2xl border border-white/10 al-glass p-10 text-center">
             <span className="mx-auto inline-flex size-12 items-center justify-center rounded-2xl bg-white/5">
               <UserPlus className="size-6 text-zinc-500" />
             </span>
@@ -462,11 +462,11 @@ export default function Audience() {
 
             {/* Table */}
             {filtered.length === 0 ? (
-              <p className="mt-4 rounded-2xl border border-white/10 bg-zinc-950/60 p-8 text-center text-sm text-zinc-500">
+              <p className="mt-4 rounded-2xl border border-white/10 al-glass p-8 text-center text-sm text-zinc-500">
                 No contacts match your filters.
               </p>
             ) : (
-              <div className="mt-4 overflow-hidden rounded-2xl border border-white/10 bg-zinc-950/60">
+              <div className="mt-4 overflow-hidden rounded-2xl border border-white/10 al-glass">
                 <table className="w-full text-left text-sm">
                   <thead>
                     <tr className="border-b border-white/10 text-[11px] uppercase tracking-wide text-zinc-500">

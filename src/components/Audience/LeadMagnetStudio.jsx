@@ -192,7 +192,7 @@ export default function LeadMagnetStudio() {
 
       <div className="mt-6 grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)]">
         {/* ---- Left: Setup wizard ---- */}
-        <div className="rounded-2xl border border-white/10 bg-zinc-950/60 p-5">
+        <div className="rounded-2xl border border-white/10 al-glass p-5">
           <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-zinc-500">
             <Wand2 className="size-3.5 text-turquoise" />
             Setup wizard
@@ -277,7 +277,7 @@ export default function LeadMagnetStudio() {
         </div>
 
         {/* ---- Right: Output ---- */}
-        <div className="rounded-2xl border border-white/10 bg-zinc-950/60 p-5">
+        <div className="rounded-2xl border border-white/10 al-glass p-5">
           {status === 'idle' && (
             <div className="flex h-full min-h-56 flex-col items-center justify-center text-center">
               <span className="inline-flex size-12 items-center justify-center rounded-2xl bg-white/5">

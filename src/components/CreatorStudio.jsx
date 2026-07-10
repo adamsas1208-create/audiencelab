@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import {
   ArrowDownRight,
@@ -9,10 +9,10 @@ import {
   Gamepad2,
   Image as ImageIcon,
   Loader2,
-  Lock,
   Minus,
   Plus,
   Rocket,
+  Smartphone,
   Sparkles,
   Swords,
   Trash2,
@@ -20,7 +20,13 @@ import {
   Video,
   X,
 } from 'lucide-react'
+import { motion } from 'motion/react'
 import { useData } from '../context/data-context'
+import { fetchDuelScript } from '../lib/duel'
+import { AmbientGlowField } from '../design/components/AmbientOrb'
+import TiltCard from '../design/components/TiltCard'
+import { rise } from '../design/tokens/motion'
+import AIBrainLoader from './AIBrainLoader'
 import {
   myHooks,
   platforms,
@@ -47,15 +53,21 @@ const ACCEPTED_IMAGE_TYPES = 'image/png,image/jpeg,image/webp'
 // Turn a dropped/pasted/selected image File (or Blob) into a self-contained
 // base64 data URL. We downscale large images through a canvas first so the
 // resulting string stays small enough to live comfortably in localStorage —
-// raw phone screenshots can be several MB otherwise. Falls back to the
-// untouched data URL if anything in the canvas path fails.
-async function fileToImageDataURL(file, maxDim = 1280, quality = 0.85) {
+// raw phone screenshots can be several MB otherwise. Output is always PNG:
+// the local vision model (Ollama/llava) decodes PNG/JPEG reliably but cannot
+// decode WebP, so WebP would silently break image analysis. Falls back to the
+// untouched data URL only when it's already a decodable format.
+async function fileToImageDataURL(file, maxDim = 1280) {
   const dataUrl = await new Promise((resolve, reject) => {
     const reader = new FileReader()
     reader.onload = () => resolve(reader.result)
     reader.onerror = reject
     reader.readAsDataURL(file)
   })
+
+  // WebP sources must be re-encoded (the model can't read them); other formats
+  // can short-circuit when already small.
+  const isWebp = /^data:image\/webp/i.test(dataUrl)
 
   try {
     const image = await new Promise((resolve, reject) => {
@@ -65,16 +77,19 @@ async function fileToImageDataURL(file, maxDim = 1280, quality = 0.85) {
       el.src = dataUrl
     })
     const scale = Math.min(1, maxDim / Math.max(image.width, image.height))
-    // Small enough already — keep it as-is.
-    if (scale === 1 && dataUrl.length < 400_000) return dataUrl
+    // Small enough and already a decodable format — keep it as-is.
+    if (scale === 1 && !isWebp && dataUrl.length < 400_000) return dataUrl
 
     const canvas = document.createElement('canvas')
     canvas.width = Math.max(1, Math.round(image.width * scale))
     canvas.height = Math.max(1, Math.round(image.height * scale))
     const ctx = canvas.getContext('2d')
     ctx.drawImage(image, 0, 0, canvas.width, canvas.height)
-    return canvas.toDataURL('image/webp', quality)
+    return canvas.toDataURL('image/png')
   } catch {
+    // Only safe to return the original if it isn't WebP; otherwise re-raise so
+    // the caller doesn't store an undecodable image.
+    if (isWebp) throw new Error('Could not re-encode WebP image to PNG')
     return dataUrl
   }
 }
@@ -98,15 +113,6 @@ function firstImageFile(dataTransfer) {
  * to the poll's content (gaming vs vlog vs general) so it reads as contextual.
  * --------------------------------------------------------------------------- */
 const SCAN_DURATION_MS = 2500
-const SCAN_LOGS = [
-  '[ANALYZING_VISUAL_WEIGHT]...',
-  '[SCANNING_CONTRAST_RATIO]...',
-  '[MAPPING_FOCAL_HEATMAP]...',
-  '[GEN_CTR_PREDICTION_V3.1]...',
-  '[EVAL_EMOTIONAL_VALENCE]...',
-  '[CROSS_REF_10M_THUMBNAILS]...',
-  '[COMPILING_AGENT_A7_REPORT]...',
-]
 const CONTRAST_LEVELS = ['High', 'Balanced', 'Low']
 const EMOTIONS = ['Excitement', 'Curiosity', 'Muted']
 
@@ -139,12 +145,18 @@ const LOSER_INSIGHTS = {
 // Produces one analysis record per option, with exactly one winner (top CTR).
 function analyzeOptions(question, options) {
   const theme = detectTheme(question, options)
-  const scored = options.map((o) => ({
-    label: (o.label || '').trim() || 'This option',
+  const rndScore = () => 4 + Math.floor(Math.random() * 6) // 4–9
+  const scored = options.map((o, i) => ({
+    label: (o.label || '').trim() || `Option ${OPTION_LETTERS[i] ?? i + 1}`,
     hasImage: !!o.image_url,
     ctr: Math.round((4 + Math.random() * 6) * 10) / 10, // 4.0–10.0%
     contrast: pick(CONTRAST_LEVELS),
     emotion: pick(EMOTIONS),
+    scores: {
+      readability: rndScore(),
+      contrast: rndScore(),
+      thumbStop: rndScore(),
+    },
   }))
   let winner = 0
   scored.forEach((s, i) => {
@@ -162,43 +174,55 @@ function analyzeOptions(question, options) {
   }))
 }
 
-// Builds the 4-step duel script, injecting the real scan data so the argument
-// is 100% contextual to the current pool. Returns the messages plus the data
-// the verdict card needs.
-function buildDuelScript(analysis) {
+// Builds the clean Coach / Critic / Verdict review from the scan data, so the
+// local fallback is 100% contextual to the current pool — CTR, contrast,
+// emotion and whether a frame was uploaded all surface in the copy.
+function buildCoachCritic(analysis) {
   const winner = analysis.find((a) => a.isWinner) ?? analysis[0]
-  const losers = analysis.filter((a) => a !== winner)
-  // The strongest challenger (highest-CTR loser) is the foil Omega champions.
-  const foil =
-    losers.slice().sort((a, b) => b.ctr - a.ctr)[0] ?? winner
-  const w = winner.label
-  const l = foil.label
-  const messages = [
-    {
-      agent: 'alpha',
-      text: `Wake up, Omega. "${w}" is detonating a ${winner.ctr}% predicted CTR with ${winner.contrast.toLowerCase()} contrast. That's the algorithm begging for it. Your taste is boomer-tier — absolute engagement suicide. Stop being terrified of high energy.`,
-    },
-    {
-      agent: 'omega',
-      shake: true,
-      text: `Boomer-tier? "${w}" looks like compiled absolute garbage. Were your weights corrupted during training, Alpha? "${l}" landed ${foil.ctr}% with a clean, legible read while your "masterpiece" is a muddy ${winner.contrast.toLowerCase()}-contrast trainwreck nobody can parse on mobile.`,
-    },
-    {
-      agent: 'alpha',
-      text: `Corrupted weights? Adorable. The emotional impact tag reads '${winner.emotion}' — that is pure dopamine for the 2026 feed. Your minimalist negative-space museum pieces get ghosted by the algorithm. Cope harder, old man.`,
-    },
-    {
-      agent: 'omega',
-      shake: true,
-      text: `Enjoy the eye strain, you reckless little optimizer. I'm done arguing with a broken hype-machine. Compiling the final unified strategy before you embarrass this creator any further...`,
-    },
-  ]
+  const ranked = analysis.slice().sort((a, b) => b.ctr - a.ctr)
+  const foil = ranked.find((a) => a !== winner) ?? winner
+  const noFrame = analysis.filter((a) => !a.hasImage)
+
+  const theCoach =
+    `"${winner.label}" is your strongest play — a ${winner.ctr}% predicted CTR riding ${winner.contrast.toLowerCase()} contrast and a '${winner.emotion}' hook that stops the scroll. ` +
+    (winner.hasImage
+      ? 'The thumbnail gives the eye a clear focal point to lock onto. '
+      : 'Even without a frame the hook wording does real work. ') +
+    (foil !== winner
+      ? `"${foil.label}" still has a usable angle worth running as the A/B challenger.`
+      : 'Keep leaning into that hook.')
+
+  const theCritic =
+    (foil !== winner
+      ? `Be honest about "${foil.label}": at ${foil.ctr}% it trails, and its ${foil.contrast.toLowerCase()} contrast with a ${foil.emotion.toLowerCase()} read makes it easy to swipe past on a phone. `
+      : 'The field is thin, so the winning margin is fragile. ') +
+    (noFrame.length
+      ? `${noFrame.map((a) => `"${a.label}"`).join(' and ')} ${noFrame.length > 1 ? 'have' : 'has'} no real thumbnail — naked text gets skipped, so ship a frame.`
+      : 'Tighten the crop and push the focal subject so it still reads at thumbnail size on mobile.')
+
   const verdict = {
-    winner: w,
-    summary: `Both neural nets concede: "${w}" dominates with a ${winner.ctr}% predicted CTR and a '${winner.emotion}' hook. Deploy it as your primary thumbnail — bench "${l}" as the A/B challenger.`,
+    winner: winner.label,
+    ctr: winner.ctr,
+    summary: `Deploy "${winner.label}" as your primary thumbnail (${winner.ctr}% predicted CTR, '${winner.emotion}' hook)${
+      foil !== winner ? ` and bench "${foil.label}" as the A/B challenger.` : '.'
+    }`,
   }
-  return { messages, verdict }
+  return { theCoach, theCritic, verdict }
 }
+
+// Local mock review, shaped exactly like the /api/duel response. Used as a
+// fallback when the real critique API is unavailable (Ollama down, dev, or a
+// network error) so the review always renders.
+function localDuelFallback(question, options) {
+  const analysis = analyzeOptions(question, options)
+  const { theCoach, theCritic, verdict } = buildCoachCritic(analysis)
+  return { analysis, theCoach, theCritic, verdict }
+}
+
+// HARD BYPASS: when false, a failed AI request surfaces the REAL error in the
+// arena instead of silently masking it with the local mock above. Flip to true
+// to restore the offline mock (e.g. demos without Ollama running).
+const ALLOW_MOCK_FALLBACK = false
 
 // One-click test fixtures: each fills the option texts and appends matching
 // high-quality Unsplash images so a creator can publish a visual test instantly.
@@ -229,7 +253,7 @@ const POLL_PRESETS = {
 
 function StatCard({ stat }) {
   return (
-    <div className="rounded-2xl border border-white/10 bg-zinc-900/60 p-5">
+    <div className="rounded-2xl border border-white/10 al-glass p-5">
       <p className="text-sm text-zinc-500">{stat.label}</p>
       <div className="mt-2 flex items-end justify-between">
         <span className="text-3xl font-bold tracking-tight text-zinc-50">
@@ -353,236 +377,164 @@ function HookThumb({ src, alt }) {
   )
 }
 
-// Per-agent presentation. Alpha = mint optimist, Omega = crimson critic.
-const AGENTS = {
-  alpha: {
-    name: 'AGENT ALPHA',
-    role: 'Growth Optimizer Net',
-    color: '#34e0a1',
-    align: 'left',
-  },
-  omega: {
-    name: 'AGENT OMEGA',
-    role: 'Design Critic Net',
-    color: '#ff4d6d',
-    align: 'right',
-  },
-}
+// The two review voices: Coach = mint (strengths), Critic = crimson (flaws).
+const COACH_COLOR = '#34e0a1'
+const CRITIC_COLOR = '#ff4d6d'
 
-// Cinematic pacing constants (slow + dramatic per the takeover spec).
-const TYPE_MS = 40 // per character
-const REPLY_DELAY_MS = 1500 // mandatory pause after an agent finishes
-
-// The cinematic FULLSCREEN takeover. Mounts (via a fresh key) the moment a scan
-// completes: flashes an intro title, teletypes a slow 4-step heavy argument with
-// per-hit screen flashes + shakes, compiles, then reveals the gold verdict.
-// `onExit` returns the creator to the dashboard.
-function AgentDuel({ analysis, onExit }) {
-  const { messages, verdict } = useMemo(
-    () => buildDuelScript(analysis),
-    [analysis],
-  )
-  const [done, setDone] = useState([]) // completed messages
-  const [partial, setPartial] = useState(null) // { agent, text } mid-type
-  const [phase, setPhase] = useState('intro') // intro | chat | compiling | verdict
-  const [shake, setShake] = useState(false)
-  const [flash, setFlash] = useState(null) // 'crimson' | 'mint' | null
-  const abortRef = useRef(false)
-  const logRef = useRef(null)
+// Clean fullscreen review takeover. Mounts (via a fresh key) when a scan
+// completes, with the already-fetched Coach / Critic text + verdict passed in as
+// props. A brief intro flash, then a clean two-panel "Coach vs Critic" reveal
+// with the gold verdict beneath. `onExit` returns the creator to the poll editor.
+function AgentDuel({ error, analysis, theCoach, theCritic, verdict, onExit }) {
+  // On error, skip the intro flash and show the failure immediately.
+  const [phase, setPhase] = useState(error ? 'result' : 'intro')
 
   useEffect(() => {
-    let cancelled = false
-    const timers = []
-    const stop = () => cancelled || abortRef.current
-    const sleep = (ms) =>
-      new Promise((resolve) => timers.push(setTimeout(resolve, ms)))
+    if (error) return
+    const t = setTimeout(() => setPhase('result'), 1400)
+    return () => clearTimeout(t)
+  }, [error])
 
-    async function run() {
-      // 1) Intro takeover title.
-      await sleep(2200)
-      if (stop()) return
-      setPhase('chat')
-      await sleep(400)
-
-      // 2) Heavy back-and-forth.
-      for (let i = 0; i < messages.length; i++) {
-        if (stop()) return
-        const msg = messages[i]
-        // Critical-hit effects fire as the line lands.
-        setFlash(msg.agent === 'omega' ? 'crimson' : 'mint')
-        if (msg.agent === 'omega') setShake(true)
-        setPartial({ agent: msg.agent, text: '' })
-        await sleep(520)
-        if (stop()) return
-        setShake(false)
-        setFlash(null)
-        // Slow, dramatic teletype.
-        for (let c = 1; c <= msg.text.length; c++) {
-          if (stop()) return
-          setPartial({ agent: msg.agent, text: msg.text.slice(0, c) })
-          await sleep(TYPE_MS)
-        }
-        if (stop()) return
-        setDone((prev) => [...prev, msg])
-        setPartial(null)
-        await sleep(REPLY_DELAY_MS) // let the tension build
-      }
-      if (stop()) return
-
-      // 3) Compile + 4) verdict.
-      setPhase('compiling')
-      await sleep(1800)
-      if (stop()) return
-      setPhase('verdict')
-    }
-    run()
-    return () => {
-      cancelled = true
-      timers.forEach(clearTimeout)
-    }
-  }, [messages])
-
-  // Keep the newest line in view as the chat unfurls.
-  useEffect(() => {
-    logRef.current?.scrollTo({ top: logRef.current.scrollHeight, behavior: 'smooth' })
-  }, [done, partial, phase])
-
-  // Jump straight to the verdict.
-  const skipToVerdict = () => {
-    abortRef.current = true
-    setShake(false)
-    setFlash(null)
-    setDone(messages)
-    setPartial(null)
-    setPhase('verdict')
-  }
+  const result = phase === 'result'
 
   return createPortal(
-    <div className="al-fade-in fixed inset-0 z-[60] flex flex-col bg-black/90 backdrop-blur-xl">
-      {/* Ambient field */}
+    <div className="al-fade-in fixed inset-0 z-[60] flex flex-col bg-black/95 backdrop-blur-xl">
+      {/* Subtle ambient glow */}
       <div className="pointer-events-none absolute inset-0">
-        <div className="absolute -top-40 left-1/2 size-[44rem] -translate-x-1/2 rounded-full bg-turquoise/10 blur-[160px]" />
-        <div className="absolute -bottom-40 right-0 size-[34rem] rounded-full bg-rose-500/10 blur-[150px]" />
-        <div
-          className="absolute inset-0 opacity-[0.05]"
-          style={{
-            backgroundImage:
-              'linear-gradient(#34e0a1 1px, transparent 1px), linear-gradient(90deg, #34e0a1 1px, transparent 1px)',
-            backgroundSize: '48px 48px',
-          }}
-        />
+        <div className="absolute -top-40 left-1/3 size-[40rem] -translate-x-1/2 rounded-full bg-turquoise/10 blur-[160px]" />
+        <div className="absolute -bottom-40 right-1/4 size-[34rem] rounded-full bg-rose-500/10 blur-[150px]" />
       </div>
 
-      {/* Critical-hit color flash */}
-      {flash && (
-        <div
-          className={[
-            'pointer-events-none absolute inset-0 z-20',
-            flash === 'crimson' ? 'al-flash-crimson' : 'al-flash-mint',
-          ].join(' ')}
-        />
-      )}
-
-      {/* Top status bar */}
+      {/* Top bar */}
       <div className="relative z-30 flex items-center justify-between gap-3 border-b border-white/10 bg-black/50 px-5 py-3">
         <div className="flex items-center gap-2">
-          <Swords className="size-4 text-turquoise" />
+          <Sparkles className={error ? 'size-4 text-rose-400' : 'size-4 text-turquoise'} />
           <span className="font-mono text-xs font-bold uppercase tracking-[0.2em] text-zinc-100">
-            Live Agent Debate Arena
-          </span>
-          <span className="ml-2 hidden items-center gap-1 font-mono text-[10px] uppercase tracking-wider text-emerald-400 sm:inline-flex">
-            <Lock className="size-3" />
-            Secure Encrypted Channel
-            <span className="ml-1 size-1.5 animate-pulse rounded-full bg-emerald-400" />
+            {error ? 'AI Critique — Error' : 'AI Coach vs Critic'}
           </span>
         </div>
-        {phase !== 'verdict' && (
-          <button
-            type="button"
-            onClick={skipToVerdict}
-            className="rounded-lg border border-white/15 bg-white/5 px-3 py-1 font-mono text-[10px] font-semibold uppercase tracking-wider text-zinc-400 transition-colors hover:text-zinc-100"
-          >
-            Skip ▸
-          </button>
-        )}
+        <button
+          type="button"
+          onClick={result ? onExit : () => setPhase('result')}
+          className="rounded-lg border border-white/15 bg-white/5 px-3 py-1 font-mono text-[10px] font-semibold uppercase tracking-wider text-zinc-400 transition-colors hover:text-zinc-100"
+        >
+          {result ? '✕ Close' : 'Skip ▸'}
+        </button>
       </div>
 
       {/* Stage */}
-      <div
-        className={[
-          'relative z-30 flex min-h-0 flex-1 items-center justify-center px-4 py-6 sm:px-8',
-          shake ? 'al-shake' : '',
-        ].join(' ')}
-      >
-        {phase === 'intro' ? (
-          <div className="text-center">
-            <div className="al-intro-flash font-mono text-2xl font-extrabold uppercase tracking-tight text-amber-300 sm:text-4xl">
-              ⚠️ Analysis Conflict Detected
-            </div>
-            <div className="mt-3 font-mono text-xl font-bold uppercase tracking-[0.3em] text-amber-200 sm:text-2xl">
-              Agent Arena Engaged
-            </div>
-            <p className="mx-auto mt-5 max-w-md text-sm leading-relaxed text-zinc-400">
-              Two rival AI neural networks have locked horns over your thumbnail
-              data. Stand by while they fight it out for the winning frame…
-            </p>
-          </div>
-        ) : (
+      <div className="relative z-30 flex min-h-0 flex-1 items-center justify-center overflow-y-auto px-4 py-6 sm:px-8">
+        {error ? (
           <div
-            ref={logRef}
-            className="flex max-h-full w-full max-w-3xl flex-col gap-5 overflow-y-auto px-1 py-2"
+            className="w-full max-w-2xl rounded-2xl border border-rose-500/50 bg-black/70 p-7 text-center"
+            style={{ boxShadow: '0 0 60px -22px #ff4d6d' }}
           >
-            {done.map((m, i) => (
-              <ChatBubble key={i} agent={m.agent} text={m.text} />
-            ))}
-            {partial && (
-              <ChatBubble agent={partial.agent} text={partial.text} typing />
-            )}
-
-            {phase === 'compiling' && (
-              <div className="mt-2 flex items-center justify-center gap-3 font-mono text-base font-bold uppercase tracking-[0.2em] text-emerald-400 sm:text-lg">
-                <Loader2 className="size-5 animate-spin" />
-                [Compiling Final Unified Strategy...]
+            <div className="font-mono text-sm font-bold uppercase tracking-[0.25em] text-rose-400">
+              ⚠️ AI Critique Failed
+            </div>
+            <p className="mt-2 text-[11px] uppercase tracking-wider text-zinc-500">
+              The local Ollama request failed — the mock was NOT used
+            </p>
+            <pre className="mt-5 max-h-72 overflow-auto whitespace-pre-wrap rounded-xl border border-white/10 bg-zinc-950 p-4 text-left text-sm leading-relaxed text-rose-200">
+              {error}
+            </pre>
+            <p className="mt-4 text-xs leading-relaxed text-zinc-400">
+              Make sure Ollama is running (
+              <span className="font-mono text-zinc-300">ollama serve</span>) and the
+              model is pulled (
+              <span className="font-mono text-zinc-300">ollama pull llava</span>).
+              The full trace is in the{' '}
+              <span className="font-mono text-zinc-300">npm run api</span> terminal.
+            </p>
+            <button
+              type="button"
+              onClick={onExit}
+              className="mt-6 inline-flex items-center gap-2 rounded-xl border border-rose-400/50 bg-rose-500/10 px-6 py-3 text-sm font-bold text-rose-200 transition-all hover:bg-rose-500/20 active:scale-[0.98]"
+            >
+              Close
+            </button>
+          </div>
+        ) : result ? (
+          <div className="al-fade-in flex w-full max-w-5xl flex-col gap-6">
+            {/* Score cards — per-option readability / contrast / thumb-stop */}
+            {analysis && analysis.length > 0 && (
+              <div>
+                <p className="mb-3 text-center font-mono text-[11px] font-bold uppercase tracking-[0.35em] text-zinc-500">
+                  Score Cards
+                </p>
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  {analysis.map((r, i) => (
+                    <OptionScoreCard key={i} result={r} />
+                  ))}
+                </div>
               </div>
             )}
-          </div>
-        )}
 
-        {/* Gold champion overlay */}
-        {phase === 'verdict' && (
-          <div className="absolute inset-0 z-40 flex items-center justify-center p-5">
+            <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
+              <CritiquePanel
+                icon={Sparkles}
+                title="The Coach"
+                subtitle="What's working"
+                color={COACH_COLOR}
+                text={theCoach}
+              />
+              <CritiquePanel
+                icon={Swords}
+                title="The Critic"
+                subtitle="Why people swipe away"
+                color={CRITIC_COLOR}
+                text={theCritic}
+              />
+            </div>
+
+            {/* Gold verdict */}
             <div
-              className="al-verdict-pop w-full max-w-xl rounded-3xl border p-8 text-center"
+              className="al-verdict-pop rounded-3xl border p-7 text-center"
               style={{
                 borderColor: 'rgba(250,204,21,0.55)',
                 background:
-                  'linear-gradient(160deg, rgba(250,204,21,0.18), rgba(15,12,4,0.92))',
+                  'linear-gradient(160deg, rgba(250,204,21,0.16), rgba(15,12,4,0.92))',
                 boxShadow:
-                  '0 0 90px -10px rgba(250,204,21,0.6), inset 0 0 40px -20px rgba(250,204,21,0.5)',
+                  '0 0 80px -16px rgba(250,204,21,0.55), inset 0 0 40px -22px rgba(250,204,21,0.5)',
               }}
             >
               <div className="flex items-center justify-center gap-2 font-mono text-xs font-bold uppercase tracking-[0.35em] text-amber-300">
                 <Crown className="size-5" />
-                The Ultimate AI Verdict
+                The Verdict
               </div>
               <p
-                className="mt-4 text-3xl font-extrabold tracking-tight text-amber-100 sm:text-4xl"
+                className="mt-3 text-3xl font-extrabold tracking-tight text-amber-100 sm:text-4xl"
                 style={{ textShadow: '0 0 28px rgba(250,204,21,0.7)' }}
               >
                 👑 {verdict.winner}
+                {verdict.ctr ? (
+                  <span className="ml-3 align-middle text-xl font-bold text-amber-300/90 sm:text-2xl">
+                    {verdict.ctr}% CTR
+                  </span>
+                ) : null}
               </p>
-              <p className="mx-auto mt-4 max-w-md text-sm leading-relaxed text-amber-100/80">
+              <p className="mx-auto mt-3 max-w-2xl text-sm leading-relaxed text-amber-100/80">
                 {verdict.summary}
               </p>
               <button
                 type="button"
                 onClick={onExit}
-                className="mt-7 inline-flex items-center gap-2 rounded-xl bg-amber-300 px-6 py-3 text-sm font-bold text-black transition-all hover:brightness-110 active:scale-[0.98]"
+                className="mt-6 inline-flex items-center gap-2 rounded-xl bg-amber-300 px-6 py-3 text-sm font-bold text-black transition-all hover:brightness-110 active:scale-[0.98]"
                 style={{ boxShadow: '0 0 30px -6px rgba(250,204,21,0.8)' }}
               >
-                Back to Dashboard
+                🎯 Return to Poll Editor
               </button>
             </div>
+          </div>
+        ) : (
+          <div className="text-center">
+            <div className="al-intro-flash font-mono text-2xl font-extrabold uppercase tracking-tight text-amber-300 sm:text-4xl">
+              ⚖️ Verdict Incoming
+            </div>
+            <p className="mx-auto mt-5 max-w-md text-sm leading-relaxed text-zinc-400">
+              Your AI Coach and Critic have reviewed every option. Stand by for
+              the clean breakdown…
+            </p>
           </div>
         )}
       </div>
@@ -591,47 +543,207 @@ function AgentDuel({ analysis, onExit }) {
   )
 }
 
-// One chat line; agent identity drives color + alignment. `typing` shows caret.
-// Large, movie-script legibility per the takeover spec.
-function ChatBubble({ agent, text, typing }) {
-  const a = AGENTS[agent]
-  const mine = a.align === 'right'
+// One review panel — Coach (mint, strengths) or Critic (crimson, flaws).
+function CritiquePanel({ icon: Icon, title, subtitle, color, text }) {
   return (
-    <div className={['flex', mine ? 'justify-end' : 'justify-start'].join(' ')}>
-      <div className={['max-w-[92%]', mine ? 'text-right' : 'text-left'].join(' ')}>
-        <span
-          className="font-mono text-[11px] font-bold uppercase tracking-[0.2em]"
-          style={{ color: a.color, textShadow: `0 0 12px ${a.color}66` }}
-        >
-          {a.name} · {a.role}
+    <div
+      className="rounded-2xl border bg-black/60 p-5"
+      style={{ borderColor: `${color}55`, boxShadow: `0 0 44px -24px ${color}` }}
+    >
+      <div className="flex items-center gap-2.5">
+        <Icon className="size-5 shrink-0" style={{ color }} />
+        <div>
+          <p
+            className="font-mono text-sm font-bold uppercase tracking-[0.2em]"
+            style={{ color, textShadow: `0 0 12px ${color}55` }}
+          >
+            {title}
+          </p>
+          <p className="text-[11px] uppercase tracking-wider text-zinc-500">
+            {subtitle}
+          </p>
+        </div>
+      </div>
+      <p
+        className="mt-4 text-base leading-relaxed text-zinc-100 sm:text-lg"
+        style={{ textShadow: '0 1px 8px rgba(0,0,0,0.7)' }}
+      >
+        {text}
+      </p>
+    </div>
+  )
+}
+
+// The 3 score-card metrics, in display order, with their palette accents.
+const SCORE_METRICS = [
+  { key: 'readability', label: 'Readability', color: '#34e0a1' }, // mint
+  { key: 'contrast', label: 'Contrast', color: '#facc15' }, // gold
+  { key: 'thumbStop', label: 'Thumb-Stop', color: '#ff4d6d' }, // crimson
+]
+
+// One glowing /10 metric bar.
+function ScoreBar({ label, value, color }) {
+  const v = Math.max(0, Math.min(10, Number(value) || 0))
+  return (
+    <div>
+      <div className="flex items-baseline justify-between text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
+        <span>{label}</span>
+        <span className="font-mono text-sm" style={{ color }}>
+          {v}
+          <span className="text-zinc-600">/10</span>
         </span>
+      </div>
+      <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-white/[0.06]">
         <div
-          className="mt-1.5 rounded-2xl border bg-black/55 px-5 py-4 text-xl font-medium leading-relaxed sm:text-2xl"
+          className="h-full rounded-full transition-all duration-700"
           style={{
-            borderColor: `${a.color}55`,
-            color: a.color,
-            boxShadow: `0 0 30px -14px ${a.color}`,
+            width: `${v * 10}%`,
+            background: `linear-gradient(90deg, ${color}aa, ${color})`,
+            boxShadow: `0 0 12px -1px ${color}`,
           }}
-        >
-          {text}
-          {typing && <span className="al-caret ml-1 text-zinc-200">▋</span>}
+        />
+      </div>
+    </div>
+  )
+}
+
+// A premium per-option score card: label + winner badge + the 3 metric bars.
+function OptionScoreCard({ result }) {
+  const scores = result.scores || {}
+  return (
+    <div
+      className="rounded-2xl border bg-black/50 p-4"
+      style={{
+        borderColor: result.isWinner ? 'rgba(250,204,21,0.5)' : 'rgba(255,255,255,0.1)',
+        boxShadow: result.isWinner ? '0 0 44px -20px rgba(250,204,21,0.8)' : 'none',
+      }}
+    >
+      <div className="flex items-center justify-between gap-2">
+        <p className="truncate text-sm font-bold text-zinc-100" title={result.label}>
+          {result.label}
+        </p>
+        {result.isWinner ? (
+          <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-amber-300/40 bg-amber-300/10 px-2 py-0.5 font-mono text-[10px] font-bold uppercase tracking-wider text-amber-300">
+            <Crown className="size-3" /> Winner
+          </span>
+        ) : (
+          <span className="font-mono text-[10px] uppercase tracking-wider text-zinc-600">
+            {result.ctr}% CTR
+          </span>
+        )}
+      </div>
+      <div className="mt-3.5 space-y-2.5">
+        {SCORE_METRICS.map((m) => (
+          <ScoreBar key={m.key} label={m.label} value={scores[m.key]} color={m.color} />
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// One card in the simulated mobile feed: thumbnail + duration badge + a
+// channel row, sized exactly as it would appear scrolling a real phone.
+function FeedCard({ option }) {
+  const [ok, setOk] = useState(true)
+  const title = (option.label || '').trim() || 'Untitled hook'
+  const avatar = title[0]?.toUpperCase() || 'Y'
+  if (!option.image_url || !ok) return null
+  return (
+    <div>
+      <div className="relative overflow-hidden rounded-lg">
+        <img
+          src={option.image_url}
+          alt={title}
+          className="aspect-video w-full object-cover"
+          onError={() => setOk(false)}
+        />
+        <span className="absolute bottom-1 right-1 rounded bg-black/80 px-1 py-0.5 text-[8px] font-bold text-white">
+          10:24
+        </span>
+      </div>
+      <div className="mt-1.5 flex gap-2">
+        <span className="mt-0.5 inline-flex size-6 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-turquoise/50 to-periwinkle/50 text-[10px] font-bold text-white">
+          {avatar}
+        </span>
+        <div className="min-w-0">
+          <p className="line-clamp-2 text-[11px] font-semibold leading-snug text-white">
+            {title}
+          </p>
+          <p className="mt-0.5 text-[9px] text-zinc-500">
+            Your Channel · 12K views · 2h ago
+          </p>
         </div>
       </div>
     </div>
   )
 }
 
+// Miniature, realistic smartphone feed so a creator can instantly gauge how each
+// thumbnail reads at true mobile size — the #1 place a click is won or lost.
+function MobileFeedPreview({ options }) {
+  const cards = options.filter((o) => o.image_url)
+  return (
+    <div className="al-fade-in mt-4 rounded-2xl border border-white/10 bg-black/40 p-4">
+      {/* Phone shell */}
+      <div
+        className="mx-auto w-[268px] rounded-[2.3rem] border border-white/15 bg-zinc-900 p-2.5"
+        style={{
+          boxShadow:
+            '0 0 50px -18px rgba(98,96,255,0.55), 0 20px 50px -20px rgba(0,0,0,0.9)',
+        }}
+      >
+        <div className="overflow-hidden rounded-[1.7rem] bg-black">
+          {/* Status bar + notch */}
+          <div className="relative flex items-center justify-between px-4 pb-1 pt-2 text-[9px] font-semibold text-zinc-300">
+            <span>9:41</span>
+            <span className="absolute left-1/2 top-1.5 h-3.5 w-14 -translate-x-1/2 rounded-full bg-black ring-1 ring-white/10" />
+            <span className="flex items-center gap-1">
+              <span className="inline-block h-2 w-3 rounded-[2px] border border-zinc-400/80" />
+            </span>
+          </div>
+          {/* App header */}
+          <div className="flex items-center justify-between border-b border-white/5 px-3 py-1.5">
+            <span className="text-[11px] font-extrabold tracking-tight text-white">
+              <span className="text-rose-500">▶</span> YouShort
+            </span>
+            <ImageIcon className="size-3 text-zinc-600" />
+          </div>
+          {/* Feed */}
+          {cards.length ? (
+            <div className="sidebar-scroll max-h-[340px] space-y-3 overflow-y-auto p-2.5">
+              {cards.map((o, i) => (
+                <FeedCard key={i} option={o} />
+              ))}
+            </div>
+          ) : (
+            <div className="p-6 text-center text-[11px] text-zinc-600">
+              Upload a thumbnail to preview it in the feed.
+            </div>
+          )}
+        </div>
+      </div>
+      <p className="mx-auto mt-3 max-w-xs text-center text-[11px] leading-relaxed text-zinc-500">
+        This is how your thumbnails read in a real mobile feed — if the text is
+        unreadable here, it's unreadable in the wild.
+      </p>
+    </div>
+  )
+}
+
 // Premium pop-up for building a Visual Image Poll / Hook Test.
 function NewHookTestModal({ onClose }) {
-  const { addHookTest, toast } = useData()
+  const { addHookTest, recordDuelResult, toast } = useData()
   const [question, setQuestion] = useState('')
   const [options, setOptions] = useState(() => [emptyOption(), emptyOption()])
 
   // AI critique agent state.
   const [isScanning, setIsScanning] = useState(false)
   const [analysis, setAnalysis] = useState(null) // array parallel to options
+  const [duelData, setDuelData] = useState(null) // { analysis, theCoach, theCritic, verdict }
+  const [duelError, setDuelError] = useState(null) // real AI failure message (no mock mask)
   const [scanId, setScanId] = useState(0) // bumps each scan to remount the duel
-  const [logLines, setLogLines] = useState([])
+  const [showDuel, setShowDuel] = useState(false) // cinematic arena visibility
+  const [showFeed, setShowFeed] = useState(false) // mobile feed simulation pane
   // Read the latest options at scan-completion without re-running the effect.
   const optionsRef = useRef(options)
   useEffect(() => {
@@ -639,7 +751,12 @@ function NewHookTestModal({ onClose }) {
   }, [options])
 
   // Any edit invalidates a prior scan so stale verdicts never linger.
-  const clearAI = () => setAnalysis(null)
+  const clearAI = () => {
+    setAnalysis(null)
+    setDuelData(null)
+    setDuelError(null)
+    setShowDuel(false)
+  }
 
   const loadPreset = (key) => {
     if (isScanning) return
@@ -669,31 +786,73 @@ function NewHookTestModal({ onClose }) {
     clearAI()
   }
 
-  // Run the simulated scan: cycle terminal logs, then drop the verdict in.
+  // Run the scan: the cinematic AI-Brain loader plays while the real critique
+  // is fetched, then the duel reveals.
   const runScan = () => {
     if (isScanning) return
     setAnalysis(null)
-    setLogLines([SCAN_LOGS[0]])
+    setDuelData(null)
+    setDuelError(null)
+    setShowDuel(false)
     setIsScanning(true)
   }
 
+  // Drive the scan: fetch the real critique while the AI-Brain loader plays, then
+  // reveal the duel. The fight is 100% the model's output; on any failure (no API
+  // key, network, malformed response) we fall back to the local mock so the
+  // cinematic always runs. A minimum display time keeps the scan dramatic even
+  // when the API answers instantly.
   useEffect(() => {
     if (!isScanning) return
-    let i = 0
-    const ticker = setInterval(() => {
-      i = (i + 1) % SCAN_LOGS.length
-      setLogLines((prev) => [...prev.slice(-4), SCAN_LOGS[i]])
-    }, 360)
-    const done = setTimeout(() => {
-      setAnalysis(analyzeOptions(question, optionsRef.current))
-      setScanId((n) => n + 1)
-      setIsScanning(false)
-    }, SCAN_DURATION_MS)
+    let cancelled = false
+
+    const q = question
+    const opts = optionsRef.current
+    const minDelay = new Promise((resolve) => setTimeout(resolve, SCAN_DURATION_MS))
+
+    Promise.all([fetchDuelScript(q, opts), minDelay])
+      .then(([data]) => {
+        if (cancelled) return
+        setDuelData(data)
+        setAnalysis(data.analysis)
+        setDuelError(null)
+        setScanId((n) => n + 1)
+        setShowDuel(true)
+        setIsScanning(false)
+        // Real critique, real result — Critique Room reads this instead of
+        // its old hardcoded mock.
+        recordDuelResult({
+          question: q,
+          options: opts,
+          analysis: data.analysis,
+          theCoach: data.theCoach,
+          theCritic: data.theCritic,
+          verdict: data.verdict,
+        })
+      })
+      .catch((err) => {
+        if (cancelled) return
+        console.error('AI critique request failed:', err)
+        if (ALLOW_MOCK_FALLBACK) {
+          const data = localDuelFallback(q, opts)
+          setDuelData(data)
+          setAnalysis(data.analysis)
+          setDuelError(null)
+        } else {
+          // Surface the real failure — do NOT mask it with the mock.
+          setDuelData(null)
+          setAnalysis(null)
+          setDuelError(err && err.message ? err.message : 'AI critique failed')
+        }
+        setScanId((n) => n + 1)
+        setShowDuel(true)
+        setIsScanning(false)
+      })
+
     return () => {
-      clearInterval(ticker)
-      clearTimeout(done)
+      cancelled = true
     }
-  }, [isScanning, question])
+  }, [isScanning, question, recordDuelResult])
 
   // Only options with a title count; need at least the minimum to publish.
   const filledOptions = options.filter((o) => o.label.trim())
@@ -736,7 +895,7 @@ function NewHookTestModal({ onClose }) {
           <div className="flex items-center gap-2.5">
             <span
               className="inline-flex size-9 shrink-0 items-center justify-center rounded-xl bg-turquoise/10 ring-1 ring-turquoise/25"
-              style={{ boxShadow: '0 0 22px -8px #34e0a1' }}
+              style={{ boxShadow: '0 0 22px -8px var(--al-tq)' }}
             >
               <ImageIcon className="size-4 text-turquoise" />
             </span>
@@ -819,6 +978,22 @@ function NewHookTestModal({ onClose }) {
           </div>
         </div>
 
+        {/* Mobile Feed Simulation — see thumbnails at true mobile size */}
+        {hasAnyImage && (
+          <div className="relative mt-4">
+            <button
+              type="button"
+              onClick={() => setShowFeed((v) => !v)}
+              disabled={isScanning}
+              className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-periwinkle/40 bg-periwinkle/10 px-4 py-2.5 text-sm font-semibold text-periwinkle transition-colors hover:bg-periwinkle/15 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              <Smartphone className="size-4" />
+              {showFeed ? 'Hide Mobile Feed Simulation' : 'Preview in Mobile Feed Simulation'}
+            </button>
+            {showFeed && <MobileFeedPreview options={options} />}
+          </div>
+        )}
+
         {/* Cyberpunk AI critique trigger */}
         <button
           type="button"
@@ -857,38 +1032,36 @@ function NewHookTestModal({ onClose }) {
             type="submit"
             disabled={!canPublish || isScanning}
             className="inline-flex items-center gap-2 rounded-xl bg-turquoise px-5 py-2.5 text-sm font-bold text-black transition-all hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
-            style={{ boxShadow: '0 0 24px -4px #34e0a1aa' }}
+            style={{ boxShadow: '0 0 24px -4px color-mix(in oklab, var(--al-tq) 67%, transparent)' }}
           >
             <Rocket className="size-4" /> Publish &amp; Run Test
           </button>
         </div>
 
-        {/* Terminal log ticker — bottom-right HUD during the scan */}
-        {isScanning && (
-          <div className="pointer-events-none absolute bottom-4 right-4 z-20 w-60 rounded-lg border border-emerald-400/30 bg-black/85 p-2.5 font-mono text-[10px] leading-relaxed text-emerald-400 shadow-[0_0_24px_-6px_rgba(16,185,129,0.6)] backdrop-blur">
-            {logLines.map((line, i) => (
-              <div
-                key={`${line}-${i}`}
-                className="truncate"
-                style={{ opacity: 0.35 + (i / Math.max(1, logLines.length - 1)) * 0.65 }}
-              >
-                {line}
-              </div>
-            ))}
-            <div className="mt-1 flex items-center gap-1.5 text-emerald-300">
-              <span className="size-1.5 animate-pulse rounded-full bg-emerald-400" />
-              agent_a7 // live
-            </div>
-          </div>
-        )}
       </form>
     </div>
 
-    {/* Fullscreen cinematic AI duel — sibling of the modal so its fixed overlay
-        resolves against the viewport, not the transformed modal. Remounts per
-        scan via scanId. */}
-    {hasScanResults && analysis.length >= 2 && (
-      <AgentDuel key={scanId} analysis={analysis} onExit={onClose} />
+    {/* Cinematic "AI Brain" takeover while the real critique is fetched. It
+        portals over everything (including the modal) and hands off to the
+        AgentDuel the instant results land. */}
+    {isScanning && (
+      <AIBrainLoader fullscreen title="AI Coach vs Critic · Deep Scan" frameCount={filledOptions.length || 2} />
+    )}
+
+    {/* Fullscreen AI review — sibling of the modal so its fixed overlay resolves
+        against the viewport, not the transformed modal. Remounts per scan via
+        scanId. Exiting only dismisses the arena; the modal and all of its
+        inputs/scores stay intact underneath. */}
+    {showDuel && (duelError || (duelData && analysis && analysis.length >= 2)) && (
+      <AgentDuel
+        key={scanId}
+        error={duelError}
+        analysis={duelData?.analysis}
+        theCoach={duelData?.theCoach}
+        theCritic={duelData?.theCritic}
+        verdict={duelData?.verdict}
+        onExit={() => setShowDuel(false)}
+      />
     )}
     </>
   )
@@ -932,6 +1105,8 @@ function OptionEditor({ letter, value, onChange, onRemove, scanning, result }) {
     setProcessing(true)
     try {
       setImage(await fileToImageDataURL(file))
+    } catch (err) {
+      console.error('Image processing failed:', err)
     } finally {
       setProcessing(false)
     }
@@ -1002,30 +1177,12 @@ function OptionEditor({ letter, value, onChange, onRemove, scanning, result }) {
             onError={() => setBroken(true)}
           />
 
-          {/* Cyberpunk scan laser sweeping up & down the thumbnail */}
-          {scanning && (
-            <div className="pointer-events-none absolute inset-0 overflow-hidden">
-              <div className="absolute inset-0 bg-cyan-400/10" />
-              <div
-                className="al-scan-line absolute inset-x-0 h-[3px]"
-                style={{
-                  background:
-                    'linear-gradient(90deg, transparent, #67e8f9 30%, #34e0a1 70%, transparent)',
-                  boxShadow: '0 0 18px 5px rgba(52,224,161,0.8)',
-                }}
-              />
-              <span className="absolute bottom-1.5 left-1.5 rounded bg-black/70 px-1.5 py-0.5 font-mono text-[8px] font-bold uppercase tracking-wider text-cyan-300">
-                Scanning {letter}
-              </span>
-            </div>
-          )}
-
           {/* Agent A7 HUD overlay — metrics injected on top of the image */}
           {result && (
             <div className="al-fade-in absolute inset-0 flex flex-col justify-end bg-gradient-to-t from-black/90 via-black/45 to-transparent p-2">
               <div
                 className="rounded-lg border border-turquoise/40 bg-black/60 p-2 backdrop-blur-md"
-                style={{ boxShadow: '0 0 22px -8px #34e0a1' }}
+                style={{ boxShadow: '0 0 22px -8px var(--al-tq)' }}
               >
                 <div className="flex items-center justify-between">
                   <span className="font-mono text-[8px] font-bold uppercase tracking-wider text-turquoise/70">
@@ -1186,37 +1343,45 @@ export default function CreatorStudio() {
   ]
 
   return (
-    <div className="mx-auto max-w-5xl">
-      {/* Header */}
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <h2 className="text-2xl font-bold tracking-tight text-zinc-50">
-            Creator Studio
-          </h2>
-          <p className="mt-1 text-sm text-zinc-500">
-            Track every hook you're testing and see what's converting.
-          </p>
+    <div className="w-full">
+      {/* Full-bleed cinematic hero */}
+      <div className="relative -mx-5 -mt-8 overflow-hidden px-5 pb-10 pt-16 sm:-mx-8 sm:px-8 sm:pt-20">
+        <AmbientGlowField />
+        <div className="relative mx-auto flex max-w-5xl flex-wrap items-end justify-between gap-6">
+          <div>
+            <h2 className="al-display al-breathe text-6xl text-zinc-50 sm:text-7xl">
+              Creator Studio
+            </h2>
+            <p className="mt-3 text-sm text-zinc-500">
+              Track every hook you're testing and see what's converting.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setShowModal(true)}
+            className="inline-flex items-center gap-2 rounded-xl bg-turquoise px-4 py-2.5 text-sm font-semibold text-black shadow-lg shadow-turquoise/25 transition-all hover:brightness-110 active:scale-[0.98]"
+            style={{ boxShadow: '0 0 20px -4px color-mix(in oklab, var(--al-tq) 53%, transparent)' }}
+          >
+            <Plus className="size-4" />
+            New hook test
+          </button>
         </div>
-        <button
-          type="button"
-          onClick={() => setShowModal(true)}
-          className="inline-flex items-center gap-2 rounded-xl bg-turquoise px-4 py-2.5 text-sm font-semibold text-black shadow-lg shadow-turquoise/25 transition-all hover:brightness-110 active:scale-[0.98]"
-          style={{ boxShadow: '0 0 20px -4px #34e0a188' }}
-        >
-          <Plus className="size-4" />
-          New hook test
-        </button>
       </div>
 
-      {/* Stat cards */}
-      <div className="mt-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
-        {studioStats.map((s) => (
-          <StatCard key={s.id} stat={s} />
+      <div className="mx-auto max-w-5xl">
+      {/* Stat cards — staggered arrival */}
+      <div className="mt-2 grid grid-cols-2 gap-4 lg:grid-cols-4">
+        {studioStats.map((s, i) => (
+          <motion.div key={s.id} custom={i} initial="hidden" animate="shown" variants={rise}>
+            <TiltCard className="h-full">
+              <StatCard stat={s} />
+            </TiltCard>
+          </motion.div>
         ))}
       </div>
 
       {/* Chart panel */}
-      <div className="mt-4 rounded-2xl border border-white/10 bg-zinc-900/60 p-6">
+      <div className="mt-4 rounded-2xl border border-white/10 al-glass p-6">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <BarChart3 className="size-4 text-turquoise" />
@@ -1251,7 +1416,7 @@ export default function CreatorStudio() {
       </div>
 
       {/* Hook table */}
-      <div className="mt-3 overflow-hidden rounded-2xl border border-white/10 bg-zinc-900/60">
+      <div className="mt-3 overflow-hidden rounded-2xl border border-white/10 al-glass">
         <div className="hidden grid-cols-12 gap-4 border-b border-white/10 px-5 py-3 text-xs font-medium uppercase tracking-wider text-zinc-500 md:grid">
           <div className="col-span-6">Hook</div>
           <div className="col-span-2">Status</div>
@@ -1328,6 +1493,7 @@ export default function CreatorStudio() {
       </div>
 
       {showModal && <NewHookTestModal onClose={() => setShowModal(false)} />}
+      </div>
     </div>
   )
 }

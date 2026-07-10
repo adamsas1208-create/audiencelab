@@ -6,8 +6,13 @@ import {
   Sparkles,
   Users,
 } from 'lucide-react'
-import { rooms as sidebarRooms } from '../Sidebar/Sidebar'
+import { motion } from 'motion/react'
+import { rooms as sidebarRooms } from '../Sidebar/nav'
 import useRoomsLive from '../../hooks/useRoomsLive'
+import Glass from '../../design/components/Glass'
+import { AmbientGlowField } from '../../design/components/AmbientOrb'
+import TiltCard from '../../design/components/TiltCard'
+import { springs, rise } from '../../design/tokens/motion'
 
 // Sidebar holds the canonical icon per room id; live DB rows only carry data.
 const ICONS = Object.fromEntries(sidebarRooms.map((r) => [r.id, r.icon]))
@@ -53,19 +58,25 @@ function demoRooms() {
 
 function RoomCard({ room, icon: Icon, live, onEnter }) {
   return (
-    <button
+    <Glass
+      as="button"
       type="button"
+      border={false}
       onClick={() => onEnter?.(room.id)}
       data-room-id={room.id}
       className={[
-        'group relative flex flex-col overflow-hidden rounded-2xl border p-5 text-left transition-all duration-300 hover:-translate-y-1 hover:bg-zinc-900/70',
+        'group relative flex h-full w-full flex-col overflow-hidden rounded-2xl border p-5 text-left transition-colors duration-300',
         room.flash
-          ? 'border-turquoise/60 bg-turquoise/[0.06]'
-          : 'border-white/10 bg-zinc-950/60 hover:border-white/25',
+          ? 'border-turquoise/60'
+          : 'border-white/10 hover:border-white/25',
       ].join(' ')}
       style={
         room.flash
-          ? { boxShadow: '0 0 0 1px #34e0a155, 0 12px 40px -12px #34e0a166' }
+          ? {
+              background: 'color-mix(in oklab, var(--al-tq) 10%, transparent)',
+              boxShadow:
+                '0 0 0 1px color-mix(in oklab, var(--al-tq) 33%, transparent), 0 12px 40px -12px color-mix(in oklab, var(--al-tq) 40%, transparent)',
+            }
           : undefined
       }
     >
@@ -78,11 +89,11 @@ function RoomCard({ room, icon: Icon, live, onEnter }) {
       <div className="relative flex items-start justify-between">
         <span
           className="inline-flex size-11 items-center justify-center rounded-xl bg-turquoise/10 ring-1 ring-turquoise/25 transition-all group-hover:ring-turquoise/50"
-          style={{ boxShadow: '0 0 22px -8px #34e0a1' }}
+          style={{ boxShadow: '0 0 22px -8px var(--al-tq)' }}
         >
           <Icon
             className="size-5 text-turquoise"
-            style={{ filter: 'drop-shadow(0 0 6px #34e0a1)' }}
+            style={{ filter: 'drop-shadow(0 0 6px var(--al-tq))' }}
           />
         </span>
 
@@ -145,7 +156,7 @@ function RoomCard({ room, icon: Icon, live, onEnter }) {
             className="h-full rounded-full bg-gradient-to-r from-turquoise to-periwinkle transition-all duration-700"
             style={{
               width: `${room.engagement ?? 0}%`,
-              boxShadow: '0 0 12px #34e0a155',
+              boxShadow: '0 0 12px color-mix(in oklab, var(--al-tq) 33%, transparent)',
             }}
           />
         </div>
@@ -156,7 +167,7 @@ function RoomCard({ room, icon: Icon, live, onEnter }) {
         Enter room
         <ArrowUpRight className="size-4" />
       </div>
-    </button>
+    </Glass>
   )
 }
 
@@ -192,47 +203,62 @@ export default function RoomsGrid({ onEnterRoom }) {
     : rooms.reduce((sum, r) => sum + ((hashString(r.id) % 460) + 40), 0)
 
   return (
-    <div className="mx-auto max-w-6xl">
-      {/* Header */}
-      <div className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <span className="mb-2 inline-flex items-center gap-1.5 rounded-full border border-turquoise/25 bg-turquoise/10 px-2.5 py-1 text-[11px] font-semibold text-turquoise">
-            <Sparkles className="size-3" />
-            Rooms Dashboard
-          </span>
-          <h2 className="text-2xl font-bold tracking-tight text-zinc-50">
-            Active voting rooms
-          </h2>
-          <p className="mt-1 flex items-center gap-2 text-sm text-zinc-500">
-            Jump into a room to test hooks against a live audience.
-            {!live && !loading && (
-              <span className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-zinc-400">
-                Demo data
-              </span>
-            )}
-          </p>
-        </div>
+    <div className="w-full">
+      {/* Full-bleed cinematic hero — breaks out of <main>'s padding so the
+          headline sits against the living sky, edge to edge. */}
+      <div className="relative -mx-5 -mt-8 mb-2 overflow-hidden px-5 pb-12 pt-16 sm:-mx-8 sm:px-8 sm:pt-20">
+        <AmbientGlowField />
+        <div className="relative mx-auto flex max-w-6xl flex-wrap items-end justify-between gap-6">
+          <div>
+            <span className="mb-4 inline-flex items-center gap-1.5 rounded-full border border-turquoise/25 bg-turquoise/10 px-2.5 py-1 font-mono text-[10px] font-semibold uppercase tracking-[0.22em] text-turquoise">
+              <Sparkles className="size-3" />
+              Rooms Dashboard
+            </span>
+            <h2 className="al-display al-breathe text-6xl text-zinc-50 sm:text-7xl">
+              Active voting rooms
+            </h2>
+            <p className="mt-4 flex items-center gap-2 text-sm text-zinc-500">
+              Jump into a room to test hooks against a live audience.
+              {!live && !loading && (
+                <span className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-zinc-400">
+                  Demo data
+                </span>
+              )}
+            </p>
+          </div>
 
-        {/* Aggregate live counter */}
-        <div className="flex items-center gap-2 rounded-full border border-turquoise/20 bg-turquoise/10 px-3.5 py-2 text-sm font-semibold text-turquoise">
-          <span className="relative flex size-2">
-            <span className="absolute inline-flex size-full animate-ping rounded-full bg-turquoise opacity-75" />
-            <span className="relative inline-flex size-2 rounded-full bg-turquoise" />
-          </span>
-          {onlineCount.toLocaleString()} {live ? 'online now' : 'creators online'}
+          {/* Aggregate live counter */}
+          <div className="flex items-center gap-2 rounded-full border border-turquoise/20 bg-turquoise/10 px-3.5 py-2 text-sm font-semibold text-turquoise">
+            <span className="relative flex size-2">
+              <span className="absolute inline-flex size-full animate-ping rounded-full bg-turquoise opacity-75" />
+              <span className="relative inline-flex size-2 rounded-full bg-turquoise" />
+            </span>
+            {onlineCount.toLocaleString()} {live ? 'online now' : 'creators online'}
+          </div>
         </div>
       </div>
 
-      {/* Grid */}
-      <div className="mt-7 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {rooms.map((room) => (
-          <RoomCard
+      {/* Grid — staggered arrival, springy hover lift */}
+      <div className="mx-auto grid max-w-6xl grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        {rooms.map((room, i) => (
+          <motion.div
             key={room.id}
-            room={room}
-            icon={iconFor(room.id)}
-            live={live}
-            onEnter={onEnterRoom}
-          />
+            custom={i}
+            initial="hidden"
+            animate="shown"
+            variants={rise}
+            whileHover={{ y: -5 }}
+            transition={springs.snappy}
+          >
+            <TiltCard className="h-full">
+              <RoomCard
+                room={room}
+                icon={iconFor(room.id)}
+                live={live}
+                onEnter={onEnterRoom}
+              />
+            </TiltCard>
+          </motion.div>
         ))}
       </div>
     </div>

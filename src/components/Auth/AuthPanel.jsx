@@ -98,7 +98,7 @@ export default function AuthPanel() {
 
   if (loading) {
     return (
-      <div className="w-full max-w-sm rounded-2xl border border-white/10 bg-zinc-950/60 p-5 text-sm text-zinc-500">
+      <div className="w-full max-w-sm rounded-2xl border border-white/10 al-glass p-5 text-sm text-zinc-500">
         Loading…
       </div>
     )
@@ -107,7 +107,7 @@ export default function AuthPanel() {
   // Signed in: credits + referral link.
   if (user) {
     return (
-      <div className="w-full max-w-sm rounded-2xl border border-white/10 bg-zinc-950/60 p-5">
+      <div className="w-full max-w-sm rounded-2xl border border-white/10 al-glass p-5">
         <div className="flex items-center justify-between">
           <div className="min-w-0">
             <p className="truncate text-sm font-semibold text-zinc-100">
@@ -157,7 +157,7 @@ export default function AuthPanel() {
   return (
     <form
       onSubmit={submit}
-      className="w-full max-w-sm rounded-2xl border border-white/10 bg-zinc-950/60 p-5"
+      className="w-full max-w-sm rounded-2xl border border-white/10 al-glass p-5"
     >
       <div className="flex items-center justify-between">
         <h3 className="text-base font-semibold text-zinc-50">

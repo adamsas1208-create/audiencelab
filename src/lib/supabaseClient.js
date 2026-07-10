@@ -1,17 +1,29 @@
 import { createClient } from '@supabase/supabase-js'
 
-// Vite exposes env vars prefixed with VITE_ on import.meta.env.
-// These are read from the project-root .env file.
+// Vite exposes VITE_-prefixed env vars on import.meta.env (read from .env
+// locally, or from the host's env vars in CI/Vercel).
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
 
-if (!supabaseUrl || !supabaseAnonKey) {
-  // Fail loud during development so a missing/placeholder .env is obvious
-  // instead of producing confusing network errors later.
-  console.error(
-    'Missing Supabase env vars. Add VITE_SUPABASE_URL and ' +
-      'VITE_SUPABASE_ANON_KEY to your .env file, then restart the dev server.',
+const configured = Boolean(supabaseUrl && supabaseAnonKey)
+
+if (!configured) {
+  // Don't throw at import (that white-screens the whole app). Warn instead —
+  // the UI still renders on demo data; auth + live rooms just stay offline
+  // until VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY are provided (locally via
+  // .env, or in the Vercel project's Environment Variables for a deploy).
+  console.warn(
+    'Supabase env vars missing — running in offline/demo mode. Set ' +
+      'VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to enable auth & live data.',
   )
 }
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey)
+// Harmless placeholders keep createClient() from throwing when unconfigured;
+// any real call simply fails gracefully (callers already fall back to demo
+// data / logged-out state).
+export const supabase = createClient(
+  supabaseUrl || 'https://placeholder.supabase.co',
+  supabaseAnonKey || 'placeholder-anon-key',
+)
+
+export const isSupabaseConfigured = configured

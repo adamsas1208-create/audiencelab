@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   ArrowUpRight,
   BadgeCheck,
@@ -10,6 +10,9 @@ import {
   Users,
 } from 'lucide-react'
 import { useData } from '../../context/data-context'
+import { isSupabaseConfigured } from '../../lib/supabaseClient'
+import { captureLead, fetchPublicProfile } from '../../lib/profiles'
+import { castPublicPollVote, fetchPublicActivePoll } from '../../lib/polls'
 
 // Initials fallback when there's no avatar (or it fails to load).
 function initials(name, handle) {
@@ -19,28 +22,65 @@ function initials(name, handle) {
   return letters.toUpperCase()
 }
 
-export default function PublicProfile({ handle }) {
-  const { profile } = useData()
+// Real, cross-device lookup by handle via the get_public_profile RPC — any
+// visitor on any device sees the creator's actual published profile.
+function useRemoteProfile(handle) {
+  // Keyed by handle so a stale in-flight fetch for a previous handle never
+  // clobbers state for the current one, without needing a synchronous
+  // "reset to loading" setState at the top of the effect.
+  const [result, setResult] = useState(null)
+  useEffect(() => {
+    let cancelled = false
+    fetchPublicProfile(handle)
+      .then((row) => {
+        if (!cancelled) setResult({ handle, profile: row })
+      })
+      .catch(() => {
+        if (!cancelled) setResult({ handle, profile: null })
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [handle])
+  const loading = !result || result.handle !== handle
+  return { loading, profile: loading ? null : result.profile }
+}
 
-  // The public page renders the locally-stored creator profile when its handle
-  // matches the URL and it has been made public.
-  const match =
-    profile.is_public &&
-    profile.handle &&
-    profile.handle.toLowerCase() === (handle || '').toLowerCase()
+export default function PublicProfile({ handle }) {
+  const { profile: localProfile } = useData()
+  const remote = useRemoteProfile(isSupabaseConfigured ? handle : null)
+
+  // Demo/local-dev fallback (no Supabase configured): match against this
+  // browser's own locally-stored profile, same as before.
+  const localMatch =
+    localProfile.is_public &&
+    localProfile.handle &&
+    localProfile.handle.toLowerCase() === (handle || '').toLowerCase()
+
+  const loading = isSupabaseConfigured && remote.loading
+  const profile = isSupabaseConfigured ? remote.profile : localProfile
+  const match = isSupabaseConfigured ? !!remote.profile : localMatch
+
+  if (loading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-transparent">
+        <Loader2 className="size-6 animate-spin text-turquoise" />
+      </div>
+    )
+  }
 
   return (
-    <div className="relative min-h-screen overflow-hidden bg-zinc-950 text-zinc-100">
-      {/* Cyberpunk gradient field: dark gray → deep obsidian with mint glow */}
+    <div className="relative min-h-screen overflow-hidden bg-transparent text-zinc-100">
+      {/* Ambient field over the living sky — glow orbs + a faint brand grid.
+          Kept translucent so the SkyCanvas (stars/moon/sunset) shows through. */}
       <div className="pointer-events-none fixed inset-0">
-        <div className="absolute inset-0 bg-gradient-to-b from-zinc-900 via-zinc-950 to-black" />
         <div className="absolute -top-32 left-1/2 size-[40rem] -translate-x-1/2 rounded-full bg-turquoise/15 blur-[150px]" />
         <div className="absolute bottom-0 right-0 size-[28rem] rounded-full bg-turquoise/10 blur-[140px]" />
         <div
           className="absolute inset-0 opacity-[0.04]"
           style={{
             backgroundImage:
-              'linear-gradient(#34e0a1 1px, transparent 1px), linear-gradient(90deg, #34e0a1 1px, transparent 1px)',
+              'linear-gradient(var(--al-tq) 1px, transparent 1px), linear-gradient(90deg, var(--al-tq) 1px, transparent 1px)',
             backgroundSize: '44px 44px',
           }}
         />
@@ -66,8 +106,8 @@ export default function PublicProfile({ handle }) {
             {profile.featured_video_url && (
               <VideoLinkButton url={profile.featured_video_url} />
             )}
-            <LeadMagnetForm />
-            <VoteSneakPeek />
+            <LeadMagnetForm handle={handle} />
+            <VoteSneakPeek handle={handle} />
             <footer className="mt-10 text-center text-xs text-zinc-600">
               Powered by{' '}
               <span className="font-semibold text-turquoise">AudienceLab</span>
@@ -110,7 +150,7 @@ function Hero({ profile }) {
         </div>
       </div>
 
-      <h1 className="mt-5 flex items-center gap-1.5 text-2xl font-bold tracking-tight text-zinc-50">
+      <h1 className="al-display mt-5 flex items-center gap-2 text-4xl italic text-zinc-50">
         {name}
         <BadgeCheck
           className="size-5 text-turquoise"
@@ -142,7 +182,7 @@ function VideoLinkButton({ url }) {
         style={{ boxShadow: 'inset 0 0 24px -6px #34e0a1' }}
         aria-hidden="true"
       />
-      <div className="relative flex items-center gap-4 rounded-2xl bg-zinc-950/70 px-5 py-4 backdrop-blur">
+      <div className="relative flex items-center gap-4 rounded-2xl al-glass-thick px-5 py-4">
         <span className="relative inline-flex size-11 shrink-0 items-center justify-center rounded-xl bg-turquoise text-black">
           <span className="absolute inset-0 animate-ping rounded-xl bg-turquoise/50" aria-hidden="true" />
           <Play className="relative size-5 fill-black" />
@@ -157,21 +197,30 @@ function VideoLinkButton({ url }) {
   )
 }
 
-function LeadMagnetForm() {
+function LeadMagnetForm({ handle }) {
   const { addLead, toast } = useData()
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [state, setState] = useState('idle') // idle | submitting | done
 
-  const submit = (e) => {
+  const submit = async (e) => {
     e.preventDefault()
     setState('submitting')
-    // Add the follower to the creator's audience (platform tagged 'Web').
-    addLead({ full_name: name, email, platform: 'Web' })
-    toast('Your exclusive bonuses are unlocked. 🎉', {
-      title: 'Welcome to the inner circle!',
-    })
-    setState('done')
+    try {
+      // Add the follower to the creator's audience (platform tagged 'Web').
+      if (isSupabaseConfigured) {
+        await captureLead({ handle, full_name: name, email })
+      } else {
+        addLead({ full_name: name, email, platform: 'Web' })
+      }
+      toast('Your exclusive bonuses are unlocked. 🎉', {
+        title: 'Welcome to the inner circle!',
+      })
+      setState('done')
+    } catch (err) {
+      toast(err?.message ?? 'Could not submit right now.', { title: 'Something went wrong' })
+      setState('idle')
+    }
   }
 
   return (
@@ -272,16 +321,31 @@ function OptionImage({ src, alt }) {
   )
 }
 
-function VoteSneakPeek() {
-  // Read the creator's live poll straight from the shared store so a vote here
-  // updates the dashboard's distribution and total in real time.
+function VoteSneakPeek({ handle }) {
+  // Local/demo fallback (no Supabase configured): read the creator's live
+  // poll straight from the shared store.
   const { polls, recordPollVote } = useData()
-  const [votedId, setVotedId] = useState(null)
+  const localPoll = useMemo(() => polls.find((p) => p.active) ?? polls[0] ?? null, [polls])
 
-  const poll = useMemo(
-    () => polls.find((p) => p.active) ?? polls[0] ?? null,
-    [polls],
-  )
+  // Real, cross-device: fetch the creator's actual live poll by handle.
+  const [remotePoll, setRemotePoll] = useState(null)
+  useEffect(() => {
+    if (!isSupabaseConfigured) return
+    let cancelled = false
+    fetchPublicActivePoll(handle)
+      .then((p) => {
+        if (!cancelled) setRemotePoll(p)
+      })
+      .catch(() => {
+        if (!cancelled) setRemotePoll(null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [handle])
+
+  const [votedId, setVotedId] = useState(null)
+  const poll = isSupabaseConfigured ? remotePoll : localPoll
 
   const total = useMemo(
     () => (poll ? poll.options.reduce((s, o) => s + (o.votes || 0), 0) : 0) || 1,
@@ -296,14 +360,33 @@ function VoteSneakPeek() {
 
   if (!poll) return null
 
-  const vote = (optionId) => {
+  const vote = async (optionId) => {
     if (votedId) return
     setVotedId(optionId)
-    recordPollVote({ pollId: poll.id, optionId }) // flows to the creator's dashboard
+    if (isSupabaseConfigured) {
+      // Optimistic bump so the follower sees their vote land immediately.
+      setRemotePoll((p) =>
+        p
+          ? {
+              ...p,
+              options: p.options.map((o) =>
+                o.id === optionId ? { ...o, votes: (o.votes || 0) + 1 } : o,
+              ),
+            }
+          : p,
+      )
+      try {
+        await castPublicPollVote({ handle, pollId: poll.id, optionId })
+      } catch {
+        /* the optimistic tally already gave the follower feedback */
+      }
+    } else {
+      recordPollVote({ pollId: poll.id, optionId }) // flows to the creator's dashboard
+    }
   }
 
   return (
-    <div className="mt-6 rounded-2xl border border-white/10 bg-zinc-950/60 p-5">
+    <div className="mt-6 rounded-2xl border border-white/10 al-glass p-5">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2 text-turquoise">
           <TrendingUp className="size-4" />

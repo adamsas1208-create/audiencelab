@@ -1,6 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Check, X } from 'lucide-react'
 import { DataContext } from './data-context'
+import { useAuth } from './auth-context'
+import { isSupabaseConfigured } from '../lib/supabaseClient'
+import { addContact as dbAddContact, fetchMyAudience } from '../lib/contacts'
+import { fetchMyPublicProfile, saveMyPublicProfile } from '../lib/profiles'
+import {
+  createPoll as dbCreatePoll,
+  fetchMyPolls,
+  setActivePoll as dbSetActivePoll,
+  updatePollOption as dbUpdatePollOption,
+} from '../lib/polls'
 
 // localStorage keys (versioned so the shape can evolve safely).
 const LS = {
@@ -9,6 +19,7 @@ const LS = {
   analytics: 'al_analytics_v1',
   polls: 'al_polls_v1',
   hookTests: 'al_hooktests_v1',
+  lastDuel: 'al_last_duel_v1',
 }
 
 const DEFAULT_PROFILE = {
@@ -114,6 +125,10 @@ export function DataProvider({ children }) {
   // Visual poll / hook tests created from the Creator Studio modal. Starts empty
   // and grows as the creator publishes tests.
   const [hookTests, setHookTests] = useState(() => load(LS.hookTests, []))
+  // The most recent REAL AI duel result (Creator Studio's live Ollama
+  // critique) — Critique Room renders this instead of design-time mock data.
+  // null until the creator actually runs a hook test.
+  const [lastDuel, setLastDuel] = useState(() => load(LS.lastDuel, null))
   const [toasts, setToasts] = useState([])
 
   // Persist each slice whenever it changes.
@@ -122,6 +137,7 @@ export function DataProvider({ children }) {
   useEffect(() => save(LS.analytics, analytics), [analytics])
   useEffect(() => save(LS.polls, polls), [polls])
   useEffect(() => save(LS.hookTests, hookTests), [hookTests])
+  useEffect(() => save(LS.lastDuel, lastDuel), [lastDuel])
 
   // Cross-tab live sync: if another tab (e.g. the open /p/<handle> page) writes
   // to localStorage, mirror it here so views stay in lockstep.
@@ -135,10 +151,70 @@ export function DataProvider({ children }) {
         const stored = load(LS.polls, null)
         if (Array.isArray(stored) && stored.length) setPolls(stored)
       } else if (e.key === LS.hookTests) setHookTests(load(LS.hookTests, []))
+      else if (e.key === LS.lastDuel) setLastDuel(load(LS.lastDuel, null))
     }
     window.addEventListener('storage', onStorage)
     return () => window.removeEventListener('storage', onStorage)
   }, [])
+
+  // ---- Real Supabase persistence (signed-in + configured) ----
+  // Signed out, or no Supabase project configured, falls back to the
+  // localStorage-only demo behavior above unchanged.
+  const { user } = useAuth()
+  const backed = isSupabaseConfigured && !!user
+
+  useEffect(() => {
+    if (!backed) return
+    let cancelled = false
+    fetchMyAudience()
+      .then((rows) => {
+        if (!cancelled) setContacts(rows)
+      })
+      .catch((e) => console.error('Failed to load contacts:', e))
+    return () => {
+      cancelled = true
+    }
+  }, [backed, user?.id])
+
+  useEffect(() => {
+    if (!backed) return
+    let cancelled = false
+    fetchMyPublicProfile()
+      .then((row) => {
+        if (!cancelled && row) setProfile((p) => ({ ...p, ...row }))
+      })
+      .catch((e) => console.error('Failed to load public profile:', e))
+    return () => {
+      cancelled = true
+    }
+  }, [backed, user?.id])
+
+  useEffect(() => {
+    if (!backed) return
+    let cancelled = false
+    fetchMyPolls()
+      .then(async (rows) => {
+        if (cancelled) return
+        if (rows.length) {
+          setPolls(rows)
+          return
+        }
+        // Brand-new account: seed the same starter polls the demo ships with,
+        // as real per-user rows (votes start at 0 — no fake pre-loaded tallies).
+        const created = []
+        for (const seed of DEFAULT_POLLS) {
+          created.push(await dbCreatePoll({ question: seed.question, options: seed.options }))
+        }
+        if (created[0]) await dbSetActivePoll(created[0].id)
+        if (!cancelled) {
+          setPolls(created.map((p, i) => ({ ...p, active: i === 0 })))
+        }
+      })
+      .catch((e) => console.error('Failed to load polls:', e))
+    return () => {
+      cancelled = true
+    }
+  }, [backed, user?.id])
 
   // ---- Toasts ----
   const timers = useRef(new Map())
@@ -166,12 +242,30 @@ export function DataProvider({ children }) {
   }, [])
 
   // ---- Actions ----
+  // Local, instant edits as the creator types; saveProfile below is what
+  // actually persists them to Supabase.
   const updateProfile = useCallback((patch) => {
     setProfile((p) => ({ ...p, ...patch }))
   }, [])
 
+  // Explicit persist step (ProfileSettings' Save button) — not fired on every
+  // keystroke, so typing stays instant and we don't hammer the RPC.
+  const saveProfile = useCallback(async () => {
+    if (!backed) return
+    await saveMyPublicProfile(profile)
+  }, [backed, profile])
+
   const addContact = useCallback(
-    ({ full_name, email, platform, source = 'manual', engagement_score = null }) => {
+    async ({ full_name, email, platform, source = 'manual', engagement_score = null }) => {
+      if (backed) {
+        const row = await dbAddContact({
+          full_name: (full_name || '').trim() || 'Unknown',
+          email: (email || '').trim(),
+          platform: platform || 'Other',
+        })
+        setContacts((prev) => [row, ...prev])
+        return row
+      }
       const contact = {
         id: uid(),
         full_name: (full_name || '').trim() || 'Unknown',
@@ -184,7 +278,7 @@ export function DataProvider({ children }) {
       setContacts((prev) => [contact, ...prev])
       return contact
     },
-    [],
+    [backed],
   )
 
   // A follower joining from the public profile form. De-dupes by email.
@@ -259,40 +353,88 @@ export function DataProvider({ children }) {
 
   // Patch a single poll option (e.g. attach/clear an image_url for a visual
   // poll). Merges the patch so existing fields like votes are preserved.
-  const updatePollOption = useCallback(({ pollId, optionId, patch }) => {
-    setPolls((prev) =>
-      prev.map((p) =>
-        p.id === pollId
-          ? {
-              ...p,
-              options: p.options.map((o) =>
-                o.id === optionId ? { ...o, ...patch } : o,
-              ),
-            }
-          : p,
-      ),
-    )
-  }, [])
+  const updatePollOption = useCallback(
+    ({ pollId, optionId, patch }) => {
+      setPolls((prev) =>
+        prev.map((p) =>
+          p.id === pollId
+            ? {
+                ...p,
+                options: p.options.map((o) =>
+                  o.id === optionId ? { ...o, ...patch } : o,
+                ),
+              }
+            : p,
+        ),
+      )
+      if (backed) {
+        dbUpdatePollOption({ optionId, patch }).catch((e) =>
+          console.error('Failed to save poll option:', e),
+        )
+      }
+    },
+    [backed],
+  )
 
   // Choose which poll is live on the public profile (one active at a time).
-  const setActivePoll = useCallback((pollId) => {
-    setPolls((prev) => prev.map((p) => ({ ...p, active: p.id === pollId })))
-  }, [])
+  const setActivePoll = useCallback(
+    (pollId) => {
+      setPolls((prev) => prev.map((p) => ({ ...p, active: p.id === pollId })))
+      if (backed) {
+        dbSetActivePoll(pollId).catch((e) => console.error('Failed to set active poll:', e))
+      }
+    },
+    [backed],
+  )
+
+  // Store the latest REAL AI duel result (Creator Studio → /api/duel) so
+  // Critique Room can render actual analysis instead of mock content.
+  const recordDuelResult = useCallback(
+    ({ question, options, analysis, theCoach, theCritic, verdict }) => {
+      setLastDuel({
+        question: (question || '').trim(),
+        options: (options || []).map((o) => ({
+          label: o.label || '',
+          image_url: o.image_url || '',
+        })),
+        analysis: analysis || [],
+        theCoach: theCoach || '',
+        theCritic: theCritic || '',
+        verdict: verdict || null,
+        completedAt: new Date().toISOString(),
+      })
+    },
+    [],
+  )
 
   const leadsCaptured = useMemo(
     () => contacts.filter((c) => c.source === 'lead').length,
     [contacts],
   )
 
+  // When Supabase-backed, votes arrive from anonymous visitors directly (never
+  // through this browser), so the total is derived from the polls we last
+  // fetched rather than a locally-incremented counter.
+  const derivedTotalVotes = useMemo(
+    () => polls.reduce((s, p) => s + p.options.reduce((s2, o) => s2 + (o.votes || 0), 0), 0),
+    [polls],
+  )
+  const effectiveAnalytics = useMemo(
+    () => (backed ? { totalVotes: derivedTotalVotes } : analytics),
+    [backed, derivedTotalVotes, analytics],
+  )
+
   const value = useMemo(
     () => ({
       profile,
       contacts,
-      analytics,
+      analytics: effectiveAnalytics,
       polls,
       hookTests,
+      lastDuel,
       leadsCaptured,
       updateProfile,
+      saveProfile,
       addContact,
       addLead,
       recordVote,
@@ -300,16 +442,19 @@ export function DataProvider({ children }) {
       updatePollOption,
       addHookTest,
       setActivePoll,
+      recordDuelResult,
       toast,
     }),
     [
       profile,
       contacts,
-      analytics,
+      effectiveAnalytics,
       polls,
       hookTests,
+      lastDuel,
       leadsCaptured,
       updateProfile,
+      saveProfile,
       addContact,
       addLead,
       recordVote,
@@ -317,6 +462,7 @@ export function DataProvider({ children }) {
       updatePollOption,
       addHookTest,
       setActivePoll,
+      recordDuelResult,
       toast,
     ],
   )
@@ -336,7 +482,7 @@ function Toaster({ toasts, onDismiss }) {
       {toasts.map((t) => (
         <div
           key={t.id}
-          className="al-toast-in pointer-events-auto flex w-full max-w-sm items-start gap-3 rounded-xl border border-turquoise/30 bg-zinc-950/90 px-4 py-3 backdrop-blur-xl"
+          className="al-toast-in pointer-events-auto flex w-full max-w-sm items-start gap-3 rounded-xl border border-turquoise/30 al-glass-thick px-4 py-3"
           style={{ boxShadow: '0 0 30px -8px #34e0a1' }}
         >
           <span className="mt-0.5 inline-flex size-6 shrink-0 items-center justify-center rounded-full bg-turquoise/15 text-turquoise">

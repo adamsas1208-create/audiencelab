@@ -47,7 +47,7 @@ function OptionCard({ letter, option, totalVotes, isWinner, voted, picked, onVot
           ? 'border-turquoise/70 bg-turquoise/[0.07]'
           : voted && isWinner
             ? 'border-turquoise/40 bg-turquoise/[0.05]'
-            : 'border-white/10 bg-zinc-950/60 hover:border-white/25 hover:bg-zinc-900/70',
+            : 'border-white/10 al-glass hover:border-white/25',
       ].join(' ')}
       style={
         isPicked

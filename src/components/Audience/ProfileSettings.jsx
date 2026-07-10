@@ -12,7 +12,11 @@ import {
   Trash2,
   User,
 } from 'lucide-react'
+import { motion } from 'motion/react'
 import { useData } from '../../context/data-context'
+import { liveUrl } from '../../lib/share'
+import { springs } from '../../design/tokens/motion'
+import SharePollButton from '../SharePollButton'
 
 // Quick-select imagery so creators can spin up a visual poll instantly without
 // hunting for URLs. Real, high-quality stock shots keyed to common content types.
@@ -33,14 +37,6 @@ const IMAGE_PRESETS = [
 
 // A, B, C… so each option reads like the familiar "Option A / Option B" poll.
 const OPTION_LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
-
-// Where the live profile lives. Uses the current origin so it works in dev,
-// preview, and production without hardcoding the domain.
-function liveUrl(handle) {
-  const origin =
-    typeof window !== 'undefined' ? window.location.origin : 'https://audiencelab.ai'
-  return `${origin}/p/${handle}`
-}
 
 function Field({ icon: Icon, label, hint, children }) {
   return (
@@ -152,8 +148,9 @@ function OptionImageField({ letter, option, onChange }) {
 export default function ProfileSettings() {
   // Edits write straight to the shared store, so the Public Profile view
   // (and any open /p/<handle> tab) updates instantly.
-  const { profile, updateProfile, polls, setActivePoll, updatePollOption, toast } =
+  const { profile, updateProfile, saveProfile, polls, setActivePoll, updatePollOption, toast } =
     useData()
+  const [saving, setSaving] = useState(false)
 
   const activePoll = polls.find((p) => p.active) ?? null
 
@@ -167,15 +164,22 @@ export default function ProfileSettings() {
 
   const canViewLive = profile.is_public && profile.handle
 
-  const save = () => {
+  const save = async () => {
     if (profile.is_public && !profile.handle.trim()) {
       toast('Add a handle so followers can reach your page.', {
         title: 'Handle needed',
       })
       return
     }
-    // Persistence is automatic (store → localStorage); this just confirms it.
-    toast('Your public profile is up to date.', { title: 'Profile saved' })
+    setSaving(true)
+    try {
+      await saveProfile()
+      toast('Your public profile is up to date.', { title: 'Profile saved' })
+    } catch (err) {
+      toast(err?.message ?? 'Could not save your profile.', { title: 'Save failed' })
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
@@ -183,15 +187,15 @@ export default function ProfileSettings() {
       <div className="flex items-start gap-3">
         <span
           className="inline-flex size-10 shrink-0 items-center justify-center rounded-xl bg-turquoise/10 ring-1 ring-turquoise/25"
-          style={{ boxShadow: '0 0 22px -8px #34e0a1' }}
+          style={{ boxShadow: '0 0 22px -8px var(--al-tq)' }}
         >
           <Globe
             className="size-5 text-turquoise"
-            style={{ filter: 'drop-shadow(0 0 6px #34e0a1)' }}
+            style={{ filter: 'drop-shadow(0 0 6px var(--al-tq))' }}
           />
         </span>
         <div>
-          <h3 className="text-lg font-bold tracking-tight text-zinc-50">
+          <h3 className="al-display text-2xl text-zinc-50 sm:text-3xl">
             Public Profile & Link Hub
           </h3>
           <p className="mt-0.5 text-sm text-zinc-500">
@@ -202,7 +206,7 @@ export default function ProfileSettings() {
 
       <div className="mt-6 grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
         {/* Left: identity */}
-        <div className="space-y-4 rounded-2xl border border-white/10 bg-zinc-950/60 p-5">
+        <div className="space-y-4 rounded-2xl border border-white/10 al-glass p-5">
           <Field icon={AtSign} label="Handle" hint="Your public URL: /p/your-handle">
             <input
               type="text"
@@ -233,7 +237,7 @@ export default function ProfileSettings() {
         </div>
 
         {/* Right: content */}
-        <div className="space-y-4 rounded-2xl border border-white/10 bg-zinc-950/60 p-5">
+        <div className="space-y-4 rounded-2xl border border-white/10 al-glass p-5">
           <Field icon={User} label="Bio">
             <textarea
               value={profile.bio}
@@ -285,13 +289,13 @@ export default function ProfileSettings() {
                 'relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors',
                 profile.is_public ? 'bg-turquoise' : 'bg-white/10',
               ].join(' ')}
-              style={profile.is_public ? { boxShadow: '0 0 16px -2px #34e0a1' } : undefined}
+              style={profile.is_public ? { boxShadow: '0 0 16px -2px var(--al-tq)' } : undefined}
             >
-              <span
-                className={[
-                  'inline-block size-5 transform rounded-full bg-white transition-transform',
-                  profile.is_public ? 'translate-x-5' : 'translate-x-0.5',
-                ].join(' ')}
+              <motion.span
+                className="inline-block size-5 rounded-full bg-white"
+                initial={false}
+                animate={{ x: profile.is_public ? 20 : 2 }}
+                transition={springs.snappy}
               />
             </button>
           </div>
@@ -299,7 +303,7 @@ export default function ProfileSettings() {
 
         {/* Active live poll picker — drives the vote widget on the public page */}
         <div className="lg:col-span-2">
-          <div className="rounded-2xl border border-white/10 bg-zinc-950/60 p-5">
+          <div className="rounded-2xl border border-white/10 al-glass p-5">
             <div className="flex items-center gap-2">
               <Radio className="size-4 text-turquoise" />
               <h4 className="text-sm font-bold text-zinc-50">Live poll on your page</h4>
@@ -325,7 +329,7 @@ export default function ProfileSettings() {
                         ? 'border-turquoise/50 bg-turquoise/10'
                         : 'border-white/10 bg-white/[0.03] hover:border-turquoise/30',
                     ].join(' ')}
-                    style={isActive ? { boxShadow: '0 0 18px -6px #34e0a1' } : undefined}
+                    style={isActive ? { boxShadow: '0 0 18px -6px var(--al-tq)' } : undefined}
                   >
                     <div className="flex items-center justify-between gap-2">
                       <span className="text-sm font-semibold text-zinc-100">
@@ -350,7 +354,7 @@ export default function ProfileSettings() {
 
         {/* Visual Image Polls — attach imagery to the live poll's options */}
         <div className="lg:col-span-2">
-          <div className="rounded-2xl border border-white/10 bg-zinc-950/60 p-5">
+          <div className="rounded-2xl border border-white/10 al-glass p-5">
             <div className="flex items-center gap-2">
               <ImageIcon className="size-4 text-turquoise" />
               <h4 className="text-sm font-bold text-zinc-50">Visual poll images</h4>
@@ -396,10 +400,11 @@ export default function ProfileSettings() {
             <button
               type="button"
               onClick={save}
-              className="inline-flex items-center gap-2 rounded-xl bg-turquoise px-5 py-2.5 text-sm font-bold text-black transition-all hover:brightness-110"
-              style={{ boxShadow: '0 0 22px -4px #34e0a1aa' }}
+              disabled={saving}
+              className="inline-flex items-center gap-2 rounded-xl bg-turquoise px-5 py-2.5 text-sm font-bold text-black transition-all hover:brightness-110 disabled:opacity-60"
+              style={{ boxShadow: '0 0 22px -4px color-mix(in oklab, var(--al-tq) 67%, transparent)' }}
             >
-              <Check className="size-4" /> Save profile
+              <Check className="size-4" /> {saving ? 'Saving…' : 'Save profile'}
             </button>
 
             <a
@@ -424,6 +429,8 @@ export default function ProfileSettings() {
             >
               <ExternalLink className="size-4" /> View Live Profile
             </a>
+
+            <SharePollButton />
 
             {profile.handle && (
               <span className="text-xs text-zinc-500">
