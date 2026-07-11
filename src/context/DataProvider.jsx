@@ -407,8 +407,12 @@ export function DataProvider({ children }) {
     [],
   )
 
+  // Leads = contacts that came in via the public-profile capture form.
+  // localStorage-mode tags them with source='lead'; the Supabase capture_lead
+  // RPC stamps platform='Profile' (see 0006 migration) — accept either so the
+  // counter is honest in both modes.
   const leadsCaptured = useMemo(
-    () => contacts.filter((c) => c.source === 'lead').length,
+    () => contacts.filter((c) => c.source === 'lead' || c.platform === 'Profile').length,
     [contacts],
   )
 
