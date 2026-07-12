@@ -199,10 +199,13 @@ function CategoryNode({ node, pulseRef, reduced }) {
     }
   })
 
-  // Push the label well outside the halo so it never overlaps the glow.
+  // Push the label just outside the halo. r×1.55 was pushing the top-most
+  // ("Audience") label above the visible frame (camera half-height ≈ 5.2,
+  // ring r = 3.5, so 3.5×1.55 ≈ 5.43 — off-screen). r×1.35 keeps every
+  // label safely inside the frame while still clearing the halo aura.
   const outward = Math.hypot(node.position[0], node.position[1])
   const labelPos = outward
-    ? [node.position[0] * 1.55, node.position[1] * 1.55, 0.05]
+    ? [node.position[0] * 1.35, node.position[1] * 1.35, 0.05]
     : [0, 0, 0.05]
 
   return (
