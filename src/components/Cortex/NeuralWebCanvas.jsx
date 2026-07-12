@@ -30,6 +30,46 @@ const PULSE_DECAY = 1.2 // pulses drop back over ~800ms
 const EDGE_BASE_OPACITY = 0.28
 const EDGE_PULSE_STRENGTH = 0.55
 
+// Soft radial-gradient glow for node halos. Draws a smooth falloff from
+// opaque-center → transparent-edge on a 1×1 plane so nodes look like
+// luminous orbs, not flat colored squares. Additive-blended per instance.
+const GLOW_VERT = `
+  varying vec2 vUv;
+  void main() {
+    vUv = uv;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  }
+`
+const GLOW_FRAG = `
+  precision mediump float;
+  varying vec2 vUv;
+  uniform vec3 uColor;
+  uniform float uOpacity;
+  void main() {
+    float r = length(vUv - vec2(0.5));
+    // Two-stop falloff: bright compact core, extended soft aura.
+    float core = smoothstep(0.32, 0.0, r);
+    float aura = smoothstep(0.5, 0.05, r) * 0.55;
+    float a = clamp(core + aura, 0.0, 1.0) * uOpacity;
+    gl_FragColor = vec4(uColor, a);
+  }
+`
+
+function makeGlowMaterial(hex, opacity = 0.9) {
+  const c = new THREE.Color(hex)
+  return new THREE.ShaderMaterial({
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+    uniforms: {
+      uColor: { value: new THREE.Vector3(c.r, c.g, c.b) },
+      uOpacity: { value: opacity },
+    },
+    vertexShader: GLOW_VERT,
+    fragmentShader: GLOW_FRAG,
+  })
+}
+
 // Plasma background shader — soft fbm crawl in brand colors so the atmosphere
 // beneath the graph feels alive without stealing attention.
 const PLASMA_VERT = `
@@ -91,7 +131,9 @@ function PlasmaBackground({ reduced }) {
           uTime: { value: 0 },
           uColorA: { value: hexToVec3('#34e0a1') }, // brand mint
           uColorB: { value: hexToVec3('#6260ff') }, // brand periwinkle
-          uIntensity: { value: 0.75 },
+          // Kept low so the plasma reads as atmospheric depth, not a green
+          // wash that swallows the individual node tints.
+          uIntensity: { value: 0.45 },
         },
         vertexShader: PLASMA_VERT,
         fragmentShader: PLASMA_FRAG,
@@ -121,6 +163,8 @@ function CategoryNode({ node, pulseRef, reduced }) {
 
   const baseRadius = NODE_RADIUS_BASE + node.intensity * NODE_RADIUS_RANGE
   const color = useMemo(() => new THREE.Color(node.tint), [node.tint])
+  const glowMaterial = useMemo(() => makeGlowMaterial(node.tint, 0.9), [node.tint])
+  useEffect(() => () => glowMaterial.dispose(), [glowMaterial])
 
   useFrame((state) => {
     // Detect a new pulse and boost the flash amount for a fast decay.
@@ -142,9 +186,12 @@ function CategoryNode({ node, pulseRef, reduced }) {
       meshRef.current.scale.setScalar(baseRadius * breath * pulseScale)
     }
     if (glowRef.current) {
-      const g = 0.5 + node.intensity * 0.4 + flashAmountRef.current * 0.5
-      glowRef.current.material.opacity = g
-      glowRef.current.scale.setScalar(baseRadius * 2.6 * (1 + flashAmountRef.current * 0.5))
+      const g = 0.65 + node.intensity * 0.35 + flashAmountRef.current * 0.5
+      if (glowRef.current.material.uniforms) {
+        glowRef.current.material.uniforms.uOpacity.value = g
+      }
+      // A halo generous enough to read as a luminous field around the node.
+      glowRef.current.scale.setScalar(baseRadius * 5.5 * (1 + flashAmountRef.current * 0.4))
     }
     // Slow mote orbit around the node.
     if (orbitRef.current && !reduced) {
@@ -152,25 +199,18 @@ function CategoryNode({ node, pulseRef, reduced }) {
     }
   })
 
-  // Move the text label a hair outward from the node so the halo doesn't
-  // overlap the text. Vector points from origin through the node.
+  // Push the label well outside the halo so it never overlaps the glow.
   const outward = Math.hypot(node.position[0], node.position[1])
   const labelPos = outward
-    ? [node.position[0] * 1.42, node.position[1] * 1.42, 0.05]
+    ? [node.position[0] * 1.55, node.position[1] * 1.55, 0.05]
     : [0, 0, 0.05]
 
   return (
     <group position={node.position}>
-      {/* Halo glow (additive sprite-like plane) */}
-      <mesh ref={glowRef}>
+      {/* Halo — soft radial-glow shader (no square edges). Placed slightly
+          behind the sphere so the core sphere always reads as the anchor. */}
+      <mesh ref={glowRef} position={[0, 0, -0.05]} material={glowMaterial}>
         <planeGeometry args={[1, 1]} />
-        <meshBasicMaterial
-          color={color}
-          transparent
-          depthWrite={false}
-          blending={THREE.AdditiveBlending}
-          opacity={0.5}
-        />
       </mesh>
       {/* Core node */}
       <mesh ref={meshRef}>
@@ -196,19 +236,23 @@ function CategoryNode({ node, pulseRef, reduced }) {
           labelPos delta moves it outward from the ring so it never overlaps
           the halo. */}
       <group position={[labelPos[0] - node.position[0], labelPos[1] - node.position[1], 0.05]}>
-        <Html center distanceFactor={10} style={{ pointerEvents: 'none' }}>
+        <Html center distanceFactor={9} style={{ pointerEvents: 'none' }}>
           <div
             className="al-cortex-node-label"
             style={{
               fontFamily: 'var(--al-font-mono, ui-monospace)',
-              fontSize: '10px',
-              fontWeight: 700,
-              letterSpacing: '0.16em',
+              fontSize: '11px',
+              fontWeight: 800,
+              letterSpacing: '0.22em',
               textTransform: 'uppercase',
-              color: node.tint,
-              textShadow: `0 0 6px ${node.tint}, 0 0 12px rgba(0,0,0,0.4)`,
+              color: '#f7fffb',
+              padding: '4px 10px',
+              borderRadius: '9999px',
+              background: `linear-gradient(135deg, ${node.tint}22, rgba(8,19,12,0.55))`,
+              border: `1px solid ${node.tint}66`,
+              boxShadow: `0 0 14px -4px ${node.tint}, inset 0 0 0 1px rgba(255,255,255,0.06)`,
+              backdropFilter: 'blur(6px)',
               whiteSpace: 'nowrap',
-              opacity: 0.9,
             }}
           >
             {node.label}
@@ -267,26 +311,21 @@ function Edge({ node, pulseRef, reduced }) {
 function CenterHub({ reduced }) {
   const ref = useRef()
   const glowRef = useRef()
+  const glowMaterial = useMemo(() => makeGlowMaterial('#e6fff4', 0.75), [])
+  useEffect(() => () => glowMaterial.dispose(), [glowMaterial])
+
   useFrame((state) => {
     const t = reduced ? 0 : state.clock.elapsedTime
     const breath = 1 + 0.06 * Math.sin(t * 1.6)
     if (ref.current) ref.current.scale.setScalar(CENTER_RADIUS * breath)
-    if (glowRef.current) {
-      const g = 0.55 + 0.15 * Math.sin(t * 1.6 + 1.2)
-      glowRef.current.material.opacity = g
+    if (glowRef.current?.material?.uniforms) {
+      glowRef.current.material.uniforms.uOpacity.value = 0.55 + 0.15 * Math.sin(t * 1.6 + 1.2)
     }
   })
   return (
     <group position={[0, 0, 0]}>
-      <mesh ref={glowRef}>
+      <mesh ref={glowRef} position={[0, 0, -0.05]} material={glowMaterial} scale={CENTER_RADIUS * 6.5}>
         <planeGeometry args={[1, 1]} />
-        <meshBasicMaterial
-          color="#ffffff"
-          transparent
-          depthWrite={false}
-          blending={THREE.AdditiveBlending}
-          opacity={0.6}
-        />
       </mesh>
       <mesh ref={ref}>
         <sphereGeometry args={[1, 32, 32]} />
