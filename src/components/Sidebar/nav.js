@@ -1,6 +1,7 @@
 import {
   Anchor,
   BarChart3,
+  Brain,
   Clapperboard,
   Cpu,
   Dumbbell,
@@ -18,9 +19,12 @@ import {
   Vote,
 } from 'lucide-react'
 
-// Primary workspace views.
+// Primary workspace views. The Cortex sits right after the dashboard as the
+// creator's cinematic mission-control view — the "brain" that sees all the
+// audience/hook/AI data at once.
 export const workspace = [
   { id: 'dashboard', label: 'Rooms Dashboard', icon: LayoutGrid },
+  { id: 'cortex', label: 'The Cortex', icon: Brain },
   { id: 'audience', label: 'Audience', icon: Users },
   { id: 'vote', label: 'Vote View', icon: Vote },
   { id: 'studio', label: 'Creator Studio', icon: BarChart3 },

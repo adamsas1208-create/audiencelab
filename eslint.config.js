@@ -32,7 +32,10 @@ export default defineConfig([
   // pattern, not a bug. The React Compiler immutability/ref rules don't model
   // this, so we relax them for the WebGL scene only.
   {
-    files: ['src/design/atmosphere/SkyCanvas.jsx'],
+    files: [
+      'src/design/atmosphere/SkyCanvas.jsx',
+      'src/components/Cortex/NeuralWebCanvas.jsx',
+    ],
     rules: {
       'react-hooks/immutability': 'off',
       'react-hooks/refs': 'off',

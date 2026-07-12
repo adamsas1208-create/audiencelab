@@ -12,6 +12,7 @@ import VoteView from './components/VoteView'
 import CreatorStudio from './components/CreatorStudio'
 import VideoLab from './components/VideoLab/VideoLab'
 import CritiqueRoom from './components/CritiqueRoom'
+import Cortex from './components/Cortex/Cortex'
 import PublicProfile from './components/PublicProfile/PublicProfile'
 
 // Lightweight public route: /p/<handle> renders a standalone, chrome-free
@@ -44,6 +45,7 @@ function AppShell() {
   // room) drops into that room's Vote View.
   const renderView = () => {
     if (active === 'dashboard') return <Dashboard onEnterRoom={setActive} />
+    if (active === 'cortex') return <Cortex />
     if (active === 'audience') return <Audience />
     if (active === 'studio') return <CreatorStudio />
     if (active === 'videolab') return <VideoLab />
