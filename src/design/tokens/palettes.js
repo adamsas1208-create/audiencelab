@@ -177,8 +177,14 @@ export const PALETTES = {
 }
 
 // Keys that hold a single hex color (interpolated pairwise).
-// bands is an array of hexes → handled separately. sunY / glassFraction are
-// numbers → also handled separately.
+// bands is an array of hexes → handled separately. sunY / glassFraction /
+// bandsOpacity are numbers → also handled separately below. Missing
+// 'bandsOpacity' here previously sent every palette's numeric bandsOpacity
+// value through lerpHex() → hexToRgb() → hex.slice(1), throwing
+// "hex.slice is not a function" and crashing the whole app's root render
+// for the entire 30-minute crossfade window after every phase transition
+// (145 minutes/day, ~10% of every day) — with no error boundary, this took
+// the whole site down to a blank page for any visitor in that window.
 const NON_COLOR_KEYS = new Set([
   'colorScheme',
   'scene',
@@ -186,6 +192,7 @@ const NON_COLOR_KEYS = new Set([
   'bands',
   'sunY',
   'glassFraction',
+  'bandsOpacity',
 ])
 const COLOR_KEYS = Object.keys(PALETTES.day).filter((k) => !NON_COLOR_KEYS.has(k))
 
