@@ -30,6 +30,11 @@ if (typeof window !== 'undefined') {
     const a = e.target.closest('a')
     if (!a || a.target || a.hasAttribute('download') || a.origin !== window.location.origin) return
     if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return
+    // Same-page hash link (e.g. "#feed") — let the browser scroll to the
+    // anchor natively instead of routing, otherwise in-page jump links break.
+    if (a.hash && a.pathname === window.location.pathname && a.search === window.location.search) {
+      return
+    }
     e.preventDefault()
     navigate(a.pathname + a.search + a.hash)
   })
