@@ -1,7 +1,14 @@
 import { useState } from 'react'
-import { LogOut } from 'lucide-react'
+import { Check, Coins, Copy, Gift, LogOut } from 'lucide-react'
 import { useAuth } from '../../context/auth-context'
 
+/**
+ * Self-contained auth + credits + referral panel. Drop <AuthPanel /> anywhere
+ * inside <AuthProvider>. Demonstrates the full referral flow:
+ *  - shows the pending ?ref= bonus to a signing-up visitor
+ *  - signs the user up (passing the ref to the backend trigger)
+ *  - shows the signed-in user's credits and shareable referral link
+ */
 // Google's multicolor "G" — lucide-react ships no brand logos.
 function GoogleIcon(props) {
   return (
@@ -26,9 +33,18 @@ function GoogleIcon(props) {
   )
 }
 
-/** Self-contained auth panel: signed-in summary + sign out, or a signup/signin form. */
 export default function AuthPanel() {
-  const { user, loading, signUp, signIn, signInWithGoogle, signOut } = useAuth()
+  const {
+    user,
+    profile,
+    loading,
+    pendingRef,
+    referralLink,
+    signUp,
+    signIn,
+    signInWithGoogle,
+    signOut,
+  } = useAuth()
 
   const [mode, setMode] = useState('signup') // 'signup' | 'signin'
   const [email, setEmail] = useState('')
@@ -36,6 +52,7 @@ export default function AuthPanel() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
   const [notice, setNotice] = useState(null)
+  const [copied, setCopied] = useState(false)
 
   const submit = async (e) => {
     e.preventDefault()
@@ -45,7 +62,11 @@ export default function AuthPanel() {
     try {
       if (mode === 'signup') {
         const { session } = await signUp({ email, password })
-        setNotice(session ? 'Account created!' : 'Check your email to confirm your account.')
+        setNotice(
+          session
+            ? 'Account created — your credits are ready!'
+            : 'Check your email to confirm your account.',
+        )
       } else {
         await signIn({ email, password })
       }
@@ -60,12 +81,19 @@ export default function AuthPanel() {
     setError(null)
     setBusy(true)
     try {
-      // Redirects to Google; the page returns signed in.
+      // Redirects to Google; the page returns signed in (ref is preserved).
       await signInWithGoogle()
     } catch (err) {
       setError(err?.message ?? 'Google sign-in failed.')
       setBusy(false)
     }
+  }
+
+  const copyLink = async () => {
+    if (!referralLink) return
+    await navigator.clipboard.writeText(referralLink)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 1500)
   }
 
   if (loading) {
@@ -76,23 +104,56 @@ export default function AuthPanel() {
     )
   }
 
+  // Signed in: credits + referral link.
   if (user) {
     return (
       <div className="w-full max-w-sm rounded-2xl border border-white/10 al-glass p-5">
-        <div className="flex items-center justify-between gap-3">
-          <p className="min-w-0 truncate text-sm font-semibold text-zinc-100">{user.email}</p>
+        <div className="flex items-center justify-between">
+          <div className="min-w-0">
+            <p className="truncate text-sm font-semibold text-zinc-100">
+              {user.email}
+            </p>
+            <p className="mt-1 inline-flex items-center gap-1.5 text-sm font-semibold text-turquoise">
+              <Coins className="size-4" />
+              {profile?.credits ?? '—'} credits
+            </p>
+          </div>
           <button
             type="button"
             onClick={signOut}
-            className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-2.5 py-1.5 text-xs font-medium text-zinc-400 transition-colors hover:text-zinc-100"
+            className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-2.5 py-1.5 text-xs font-medium text-zinc-400 transition-colors hover:text-zinc-100"
           >
             <LogOut className="size-3.5" /> Sign out
           </button>
         </div>
+
+        {referralLink && (
+          <div className="mt-4">
+            <p className="mb-1.5 inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-zinc-500">
+              <Gift className="size-3.5 text-turquoise" /> Invite & earn 100 credits
+            </p>
+            <div className="flex items-center gap-2">
+              <input
+                readOnly
+                value={referralLink}
+                className="w-full truncate rounded-lg border border-white/10 bg-white/5 px-2.5 py-2 text-xs text-zinc-300"
+              />
+              <button
+                type="button"
+                onClick={copyLink}
+                className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-turquoise px-3 py-2 text-xs font-semibold text-black transition-all hover:brightness-110"
+              >
+                {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
+                {copied ? 'Copied' : 'Copy'}
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     )
   }
 
+  // Signed out: signup / signin form.
   return (
     <form
       onSubmit={submit}
@@ -110,6 +171,13 @@ export default function AuthPanel() {
           {mode === 'signup' ? 'Have an account?' : 'Need an account?'}
         </button>
       </div>
+
+      {mode === 'signup' && pendingRef && (
+        <p className="mt-3 inline-flex items-center gap-1.5 rounded-lg border border-turquoise/25 bg-turquoise/10 px-2.5 py-1.5 text-xs font-medium text-turquoise">
+          <Gift className="size-3.5" />
+          Referred by {pendingRef} — you'll get 200 credits!
+        </p>
+      )}
 
       {/* Google OAuth */}
       <button

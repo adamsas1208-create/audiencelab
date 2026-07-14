@@ -1,14 +1,15 @@
 import { useState } from 'react'
+import { Coins } from 'lucide-react'
 import { useAuth } from '../../context/auth-context'
 import AuthPanel from './AuthPanel'
 
 /**
  * Compact top-bar auth control. Shows a "Sign in" button when signed out, or
- * the user's avatar initial when signed in; either opens AuthPanel in a
- * dropdown.
+ * the user's avatar + credits when signed in; either opens AuthPanel in a
+ * dropdown. Drop-in replacement for the old placeholder avatar.
  */
 export default function AuthMenu() {
-  const { user, loading } = useAuth()
+  const { user, profile, loading } = useAuth()
   const [open, setOpen] = useState(false)
 
   const initial = user?.email?.[0]?.toUpperCase() ?? '?'
@@ -19,9 +20,17 @@ export default function AuthMenu() {
         <button
           type="button"
           onClick={() => setOpen((o) => !o)}
-          className="inline-flex size-9 items-center justify-center rounded-xl bg-gradient-to-br from-turquoise to-periwinkle text-sm font-bold text-black"
+          className="flex items-center gap-2"
         >
-          {initial}
+          {profile?.credits != null && (
+            <span className="hidden items-center gap-1 rounded-lg border border-turquoise/20 bg-turquoise/10 px-2 py-1 text-xs font-semibold text-turquoise sm:inline-flex">
+              <Coins className="size-3.5" />
+              {profile.credits}
+            </span>
+          )}
+          <span className="inline-flex size-9 items-center justify-center rounded-xl bg-gradient-to-br from-turquoise to-periwinkle text-sm font-bold text-black">
+            {initial}
+          </span>
         </button>
       ) : (
         <button

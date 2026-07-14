@@ -511,27 +511,69 @@ body {
   }
 }
 
-/* Super-thin, dark scrollbar for scrollable panels (e.g. a long feed list).
+/* Super-thin, dark scrollbar for the scrollable rooms list in the sidebar.
    Stays nearly invisible until the row is hovered. */
-.al-thin-scroll {
+.sidebar-scroll {
   scrollbar-width: thin;
   scrollbar-color: color-mix(in oklab, var(--al-white) 16%, transparent)
     transparent;
 }
-.al-thin-scroll::-webkit-scrollbar {
+.sidebar-scroll::-webkit-scrollbar {
   width: 6px;
 }
-.al-thin-scroll::-webkit-scrollbar-track {
+.sidebar-scroll::-webkit-scrollbar-track {
   background: transparent;
 }
-.al-thin-scroll::-webkit-scrollbar-thumb {
+.sidebar-scroll::-webkit-scrollbar-thumb {
   background: color-mix(in oklab, var(--al-white) 12%, transparent);
   border: none;
   border-radius: 9999px;
 }
-.al-thin-scroll:hover::-webkit-scrollbar-thumb {
+.sidebar-scroll:hover::-webkit-scrollbar-thumb {
   background: color-mix(in oklab, var(--al-white) 22%, transparent);
 }
-.al-thin-scroll::-webkit-scrollbar-thumb:hover {
+.sidebar-scroll::-webkit-scrollbar-thumb:hover {
   background: var(--al-tq);
+}
+
+/* Custom range-slider thumb used by The Cortex's tone slider. The track's
+   turquoise-to-empty gradient is set inline on the input (so it can react
+   to `value` without a re-styled rule), but the thumb itself is styled here
+   because ::-webkit-slider-thumb / ::-moz-range-thumb can't be Tailwinded. */
+.al-cortex-tone-slider {
+  outline: none;
+}
+.al-cortex-tone-slider::-webkit-slider-thumb {
+  appearance: none;
+  -webkit-appearance: none;
+  height: 16px;
+  width: 16px;
+  border-radius: 9999px;
+  background: var(--al-tq);
+  border: 2px solid #08130c;
+  box-shadow:
+    0 0 12px -2px var(--al-tq),
+    0 0 0 4px color-mix(in oklab, var(--al-tq) 20%, transparent);
+  cursor: grab;
+  transition: transform 120ms ease;
+}
+.al-cortex-tone-slider::-webkit-slider-thumb:active {
+  cursor: grabbing;
+  transform: scale(1.15);
+}
+.al-cortex-tone-slider::-moz-range-thumb {
+  height: 16px;
+  width: 16px;
+  border-radius: 9999px;
+  background: var(--al-tq);
+  border: 2px solid #08130c;
+  box-shadow:
+    0 0 12px -2px var(--al-tq),
+    0 0 0 4px color-mix(in oklab, var(--al-tq) 20%, transparent);
+  cursor: grab;
+}
+.al-cortex-tone-slider:focus-visible::-webkit-slider-thumb {
+  box-shadow:
+    0 0 14px -1px var(--al-tq),
+    0 0 0 5px color-mix(in oklab, var(--al-tq) 32%, transparent);
 }
