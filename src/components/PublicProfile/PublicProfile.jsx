@@ -324,7 +324,7 @@ function OptionImage({ src, alt }) {
 function VoteSneakPeek({ handle }) {
   // Local/demo fallback (no Supabase configured): read the creator's live
   // poll straight from the shared store.
-  const { polls, recordPollVote } = useData()
+  const { polls, recordPollVote, toast } = useData()
   const localPoll = useMemo(() => polls.find((p) => p.active) ?? polls[0] ?? null, [polls])
 
   // Real, cross-device: fetch the creator's actual live poll by handle.
@@ -377,8 +377,32 @@ function VoteSneakPeek({ handle }) {
       )
       try {
         await castPublicPollVote({ handle, pollId: poll.id, optionId })
-      } catch {
-        /* the optimistic tally already gave the follower feedback */
+      } catch (err) {
+        // The insert never happened server-side (blocked by the poll-not-
+        // available check or the one-vote-per-voter unique constraint), so
+        // the optimistic bump above is wrong — revert it.
+        setRemotePoll((p) =>
+          p
+            ? {
+                ...p,
+                options: p.options.map((o) =>
+                  o.id === optionId ? { ...o, votes: Math.max(0, (o.votes || 0) - 1) } : o,
+                ),
+              }
+            : p,
+        )
+        const alreadyVoted = /already voted/i.test(err?.message || '')
+        if (alreadyVoted) {
+          // They really did vote before (just not in this action) — leave
+          // votedId set so the UI still reads as "you're part of the
+          // audience now" rather than inviting a retry loop.
+          toast('You already voted on this poll.', { title: 'Thanks — you’re in!' })
+        } else {
+          setVotedId(null) // let them retry a real failure (network, etc.)
+          toast(err?.message || 'Could not submit your vote. Try again.', {
+            title: 'Vote failed',
+          })
+        }
       }
     } else {
       recordPollVote({ pollId: poll.id, optionId }) // flows to the creator's dashboard

@@ -489,44 +489,31 @@ body {
   background: var(--al-tq);
 }
 
-/* Custom range-slider thumb used by The Cortex's tone slider. The track's
-   turquoise-to-empty gradient is set inline on the input (so it can react
-   to `value` without a re-styled rule), but the thumb itself is styled here
-   because ::-webkit-slider-thumb / ::-moz-range-thumb can't be Tailwinded. */
-.al-cortex-tone-slider {
-  outline: none;
+/* Legal-document prose spacing (Terms of Service / Privacy Policy). Content
+   is plain semantic HTML inside the Glass card — no typography plugin, so
+   headings/paragraphs/lists get their rhythm here instead. */
+.al-legal-content h2 {
+  margin-top: 1.75rem;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--al-z50, #f4f4f5);
 }
-.al-cortex-tone-slider::-webkit-slider-thumb {
-  appearance: none;
-  -webkit-appearance: none;
-  height: 16px;
-  width: 16px;
-  border-radius: 9999px;
-  background: var(--al-tq);
-  border: 2px solid #08130c;
-  box-shadow:
-    0 0 12px -2px var(--al-tq),
-    0 0 0 4px color-mix(in oklab, var(--al-tq) 20%, transparent);
-  cursor: grab;
-  transition: transform 120ms ease;
+.al-legal-content h2:first-child {
+  margin-top: 0;
 }
-.al-cortex-tone-slider::-webkit-slider-thumb:active {
-  cursor: grabbing;
-  transform: scale(1.15);
+.al-legal-content p {
+  margin-top: 0.6rem;
 }
-.al-cortex-tone-slider::-moz-range-thumb {
-  height: 16px;
-  width: 16px;
-  border-radius: 9999px;
-  background: var(--al-tq);
-  border: 2px solid #08130c;
-  box-shadow:
-    0 0 12px -2px var(--al-tq),
-    0 0 0 4px color-mix(in oklab, var(--al-tq) 20%, transparent);
-  cursor: grab;
+.al-legal-content ul {
+  margin-top: 0.6rem;
+  padding-left: 1.25rem;
+  list-style: disc;
 }
-.al-cortex-tone-slider:focus-visible::-webkit-slider-thumb {
-  box-shadow:
-    0 0 14px -1px var(--al-tq),
-    0 0 0 5px color-mix(in oklab, var(--al-tq) 32%, transparent);
+.al-legal-content li {
+  margin-top: 0.3rem;
+}
+.al-legal-content a {
+  color: var(--al-tq);
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }

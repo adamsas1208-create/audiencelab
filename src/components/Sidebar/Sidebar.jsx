@@ -3,6 +3,7 @@ import { motion } from 'motion/react'
 import { rooms, workspace } from './nav'
 import { springs } from '../../design/tokens/motion'
 import { useData } from '../../context/data-context'
+import { FREE_LIMITS } from '../../lib/limits'
 
 function Brand() {
   return (
@@ -139,16 +140,17 @@ export default function Sidebar({ active, onSelect, query = '' }) {
       <div className="shrink-0 p-3">
         <div className="rounded-2xl border border-turquoise/20 bg-gradient-to-br from-turquoise/10 via-periwinkle/5 to-transparent p-4">
           <p className="text-sm font-semibold text-zinc-100">
-            Unlock Pro insights
+            Unlock Pro
           </p>
           <p className="mt-1 text-xs text-zinc-400">
-            Test up to 4 hooks at once and get AI rewrite suggestions.
+            Free plan: up to {FREE_LIMITS.contacts} contacts, {FREE_LIMITS.polls} polls,{' '}
+            {FREE_LIMITS.hookTests} hook tests. Upgrade for unlimited.
           </p>
           <button
             type="button"
             onClick={() =>
               toast('Pro plans are coming soon — thanks for your interest!', {
-                title: 'Unlock Pro insights',
+                title: 'Unlock Pro',
               })
             }
             className="mt-3 w-full rounded-lg bg-turquoise px-3 py-2 text-xs font-semibold text-black transition-all hover:brightness-110"

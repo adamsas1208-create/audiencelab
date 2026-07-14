@@ -3,6 +3,7 @@ import { Check, X } from 'lucide-react'
 import { DataContext } from './data-context'
 import { useAuth } from './auth-context'
 import { isSupabaseConfigured } from '../lib/supabaseClient'
+import { FREE_LIMITS } from '../lib/limits'
 import { addContact as dbAddContact, fetchMyAudience } from '../lib/contacts'
 import { fetchMyPublicProfile, saveMyPublicProfile } from '../lib/profiles'
 import {
@@ -153,8 +154,11 @@ export function DataProvider({ children }) {
   // ---- Real Supabase persistence (signed-in + configured) ----
   // Signed out, or no Supabase project configured, falls back to the
   // localStorage-only demo behavior above unchanged.
-  const { user } = useAuth()
+  const { user, profile: authProfile } = useAuth()
   const backed = isSupabaseConfigured && !!user
+  // Client-side gate mirrored by DB triggers (0009_plan_limits.sql) — this
+  // check is UX (a fast, friendly error before a round-trip), not security.
+  const isPro = authProfile?.plan === 'pro'
 
   useEffect(() => {
     if (!backed) return
@@ -250,6 +254,11 @@ export function DataProvider({ children }) {
 
   const addContact = useCallback(
     async ({ full_name, email, platform, source = 'manual', engagement_score = null }) => {
+      if (!isPro && contacts.length >= FREE_LIMITS.contacts) {
+        throw new Error(
+          `Free plan is capped at ${FREE_LIMITS.contacts} contacts. Upgrade to Pro for unlimited.`,
+        )
+      }
       if (backed) {
         const row = await dbAddContact({
           full_name: (full_name || '').trim() || 'Unknown',
@@ -271,7 +280,7 @@ export function DataProvider({ children }) {
       setContacts((prev) => [contact, ...prev])
       return contact
     },
-    [backed],
+    [backed, contacts.length, isPro],
   )
 
   // A follower joining from the public profile form. De-dupes by email.
@@ -320,6 +329,13 @@ export function DataProvider({ children }) {
   // studio list so it appears instantly under the Testing/Live status.
   const addHookTest = useCallback(
     ({ question, options, platform = 'tiktok', status = 'testing' }) => {
+      if (!isPro && hookTests.length >= FREE_LIMITS.hookTests) {
+        toast(
+          `Free plan is capped at ${FREE_LIMITS.hookTests} hook tests. Upgrade to Pro for unlimited.`,
+          { title: 'Hook test limit reached' },
+        )
+        return null
+      }
       const test = {
         id: uid(),
         text: (question || '').trim() || 'Untitled hook test',
@@ -341,7 +357,7 @@ export function DataProvider({ children }) {
       setHookTests((prev) => [test, ...prev])
       return test
     },
-    [],
+    [hookTests.length, isPro, toast],
   )
 
   // Patch a single poll option (e.g. attach/clear an image_url for a visual

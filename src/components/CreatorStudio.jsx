@@ -374,11 +374,14 @@ function NewHookTestModal({ onClose }) {
   const publish = (e) => {
     e.preventDefault()
     if (!canPublish) return
-    addHookTest({
+    // null means the free-plan hook-test limit was hit — addHookTest already
+    // surfaced its own upsell toast, so just leave the modal open.
+    const test = addHookTest({
       question,
       status: 'testing',
       options: filledOptions,
     })
+    if (!test) return
     toast(`Your ${filledOptions.length}-option test is now collecting votes.`, {
       title: 'Test published & running',
     })

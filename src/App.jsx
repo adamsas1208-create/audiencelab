@@ -11,6 +11,9 @@ import Audience from './components/Audience/Audience'
 import VoteView from './components/VoteView'
 import CreatorStudio from './components/CreatorStudio'
 import PublicProfile from './components/PublicProfile/PublicProfile'
+import TermsOfService from './pages/legal/TermsOfService'
+import PrivacyPolicy from './pages/legal/PrivacyPolicy'
+import ResetPasswordPage from './components/Auth/ResetPasswordPage'
 
 // Lightweight public route: /p/<handle> renders a standalone, chrome-free
 // creator page (no sidebar/topbar). Anything else renders the authed app.
@@ -20,9 +23,24 @@ function publicProfileHandle() {
   return m ? decodeURIComponent(m[1]) : null
 }
 
+// Static standalone routes — each checked in order before the authed app.
+function staticRoute() {
+  if (typeof window === 'undefined') return null
+  const path = window.location.pathname
+  if (path === '/terms') return 'terms'
+  if (path === '/privacy') return 'privacy'
+  if (path === '/reset-password') return 'reset-password'
+  return null
+}
+
 export default function App() {
   const handle = publicProfileHandle()
   if (handle) return <PublicProfile handle={handle} />
+
+  const route = staticRoute()
+  if (route === 'terms') return <TermsOfService />
+  if (route === 'privacy') return <PrivacyPolicy />
+  if (route === 'reset-password') return <ResetPasswordPage />
 
   return <AppShell />
 }
@@ -142,6 +160,16 @@ function AppShell() {
             </motion.div>
           </AnimatePresence>
         </main>
+
+        <footer className="shrink-0 border-t border-white/5 px-5 py-3 text-center text-[11px] text-zinc-600 sm:px-8">
+          <a href="/terms" className="transition-colors hover:text-zinc-400">
+            Terms
+          </a>
+          <span className="mx-2">·</span>
+          <a href="/privacy" className="transition-colors hover:text-zinc-400">
+            Privacy
+          </a>
+        </footer>
       </div>
     </div>
   )

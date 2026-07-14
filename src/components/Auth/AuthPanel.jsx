@@ -44,9 +44,10 @@ export default function AuthPanel() {
     signIn,
     signInWithGoogle,
     signOut,
+    requestPasswordReset,
   } = useAuth()
 
-  const [mode, setMode] = useState('signup') // 'signup' | 'signin'
+  const [mode, setMode] = useState('signup') // 'signup' | 'signin' | 'reset'
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [busy, setBusy] = useState(false)
@@ -67,6 +68,9 @@ export default function AuthPanel() {
             ? 'Account created — your credits are ready!'
             : 'Check your email to confirm your account.',
         )
+      } else if (mode === 'reset') {
+        await requestPasswordReset({ email })
+        setNotice('Check your email for a password reset link.')
       } else {
         await signIn({ email, password })
       }
@@ -161,15 +165,25 @@ export default function AuthPanel() {
     >
       <div className="flex items-center justify-between">
         <h3 className="text-base font-semibold text-zinc-50">
-          {mode === 'signup' ? 'Create your account' : 'Welcome back'}
+          {mode === 'signup' ? 'Create your account' : mode === 'reset' ? 'Reset your password' : 'Welcome back'}
         </h3>
-        <button
-          type="button"
-          onClick={() => setMode(mode === 'signup' ? 'signin' : 'signup')}
-          className="text-xs font-medium text-turquoise hover:underline"
-        >
-          {mode === 'signup' ? 'Have an account?' : 'Need an account?'}
-        </button>
+        {mode === 'reset' ? (
+          <button
+            type="button"
+            onClick={() => setMode('signin')}
+            className="text-xs font-medium text-turquoise hover:underline"
+          >
+            Back to sign in
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setMode(mode === 'signup' ? 'signin' : 'signup')}
+            className="text-xs font-medium text-turquoise hover:underline"
+          >
+            {mode === 'signup' ? 'Have an account?' : 'Need an account?'}
+          </button>
+        )}
       </div>
 
       {mode === 'signup' && pendingRef && (
@@ -179,27 +193,31 @@ export default function AuthPanel() {
         </p>
       )}
 
-      {/* Google OAuth */}
-      <button
-        type="button"
-        onClick={googleSignIn}
-        disabled={busy}
-        className="mt-4 flex w-full items-center justify-center gap-2.5 rounded-lg border border-white/15 bg-white px-3 py-2.5 text-sm font-semibold text-zinc-800 transition-all hover:bg-zinc-100 disabled:opacity-50"
-      >
-        <GoogleIcon className="size-4" />
-        Continue with Google
-      </button>
+      {mode !== 'reset' && (
+        <>
+          {/* Google OAuth */}
+          <button
+            type="button"
+            onClick={googleSignIn}
+            disabled={busy}
+            className="mt-4 flex w-full items-center justify-center gap-2.5 rounded-lg border border-white/15 bg-white px-3 py-2.5 text-sm font-semibold text-zinc-800 transition-all hover:bg-zinc-100 disabled:opacity-50"
+          >
+            <GoogleIcon className="size-4" />
+            Continue with Google
+          </button>
 
-      {/* divider */}
-      <div className="my-4 flex items-center gap-3">
-        <span className="h-px flex-1 bg-white/10" />
-        <span className="text-[11px] font-medium uppercase tracking-wide text-zinc-600">
-          or
-        </span>
-        <span className="h-px flex-1 bg-white/10" />
-      </div>
+          {/* divider */}
+          <div className="my-4 flex items-center gap-3">
+            <span className="h-px flex-1 bg-white/10" />
+            <span className="text-[11px] font-medium uppercase tracking-wide text-zinc-600">
+              or
+            </span>
+            <span className="h-px flex-1 bg-white/10" />
+          </div>
+        </>
+      )}
 
-      <div className="space-y-3">
+      <div className={mode === 'reset' ? 'mt-4 space-y-3' : 'space-y-3'}>
         <input
           type="email"
           required
@@ -208,15 +226,30 @@ export default function AuthPanel() {
           onChange={(e) => setEmail(e.target.value)}
           className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-zinc-200 placeholder:text-zinc-600 focus:border-turquoise/40 focus:outline-none"
         />
-        <input
-          type="password"
-          required
-          minLength={6}
-          placeholder="Password (min 6 chars)"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-zinc-200 placeholder:text-zinc-600 focus:border-turquoise/40 focus:outline-none"
-        />
+        {mode !== 'reset' && (
+          <input
+            type="password"
+            required
+            minLength={6}
+            placeholder="Password (min 6 chars)"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-zinc-200 placeholder:text-zinc-600 focus:border-turquoise/40 focus:outline-none"
+          />
+        )}
+        {mode === 'signin' && (
+          <button
+            type="button"
+            onClick={() => {
+              setError(null)
+              setNotice(null)
+              setMode('reset')
+            }}
+            className="text-xs font-medium text-zinc-500 hover:text-turquoise hover:underline"
+          >
+            Forgot password?
+          </button>
+        )}
       </div>
 
       {error && <p className="mt-3 text-xs text-rose-400">{error}</p>}
@@ -228,8 +261,28 @@ export default function AuthPanel() {
         className="mt-4 w-full rounded-lg bg-turquoise px-3 py-2.5 text-sm font-semibold text-black transition-all hover:brightness-110 disabled:opacity-50"
         style={{ boxShadow: '0 0 18px -4px #34e0a188' }}
       >
-        {busy ? 'Please wait…' : mode === 'signup' ? 'Sign up' : 'Sign in'}
+        {busy
+          ? 'Please wait…'
+          : mode === 'signup'
+            ? 'Sign up'
+            : mode === 'reset'
+              ? 'Send reset link'
+              : 'Sign in'}
       </button>
+
+      {mode === 'signup' && (
+        <p className="mt-3 text-center text-[11px] leading-relaxed text-zinc-600">
+          By signing up, you agree to our{' '}
+          <a href="/terms" className="text-zinc-400 underline hover:text-zinc-200">
+            Terms
+          </a>{' '}
+          and{' '}
+          <a href="/privacy" className="text-zinc-400 underline hover:text-zinc-200">
+            Privacy Policy
+          </a>
+          .
+        </p>
+      )}
     </form>
   )
 }

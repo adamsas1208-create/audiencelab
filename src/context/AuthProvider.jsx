@@ -24,6 +24,10 @@ export function AuthProvider({ children }) {
   const [profile, setProfile] = useState(null)
   const [loading, setLoading] = useState(true)
   const [pendingRef, setPendingRef] = useState(() => capturePendingRef())
+  // True for the brief session Supabase creates when a visitor lands via a
+  // "reset your password" email link — the UI uses this to show the
+  // set-new-password form instead of treating it as a normal sign-in.
+  const [recoveryMode, setRecoveryMode] = useState(false)
 
   const loadProfile = useCallback(async (userId) => {
     if (!userId) {
@@ -32,7 +36,7 @@ export function AuthProvider({ children }) {
     }
     const { data } = await supabase
       .from('profiles')
-      .select('id, email, credits, referral_code, referred_by')
+      .select('id, email, credits, referral_code, referred_by, plan')
       .eq('id', userId)
       .maybeSingle()
     setProfile(data ?? null)
@@ -69,7 +73,13 @@ export function AuthProvider({ children }) {
 
     const { data: sub } = supabase.auth.onAuthStateChange((event, next) => {
       setSession(next)
-      if (event === 'SIGNED_IN' && next?.user) {
+      if (event === 'PASSWORD_RECOVERY') {
+        // Supabase signs the visitor in with a short-lived session so
+        // updateUser({ password }) can work — flag it so the UI shows the
+        // set-new-password form instead of the normal signed-in app.
+        setRecoveryMode(true)
+        loadProfile(next?.user?.id)
+      } else if (event === 'SIGNED_IN' && next?.user) {
         // New (or returning) sign-in — apply any pending ref, then refresh.
         applyPendingReferral(next.user.id).then(() => loadProfile(next.user.id))
       } else {
@@ -128,6 +138,23 @@ export function AuthProvider({ children }) {
     await supabase.auth.signOut()
   }, [])
 
+  // Sends a password-reset email; the link lands back on /reset-password,
+  // which triggers the PASSWORD_RECOVERY branch above.
+  const requestPasswordReset = useCallback(async ({ email }) => {
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${window.location.origin}/reset-password`,
+    })
+    if (error) throw error
+  }, [])
+
+  // Sets a new password for the recovery session established by the reset
+  // link, then clears recoveryMode so the app returns to normal.
+  const completePasswordReset = useCallback(async ({ password }) => {
+    const { error } = await supabase.auth.updateUser({ password })
+    if (error) throw error
+    setRecoveryMode(false)
+  }, [])
+
   const referralLink = useMemo(
     () =>
       profile?.referral_code
@@ -144,10 +171,13 @@ export function AuthProvider({ children }) {
       loading,
       pendingRef,
       referralLink,
+      recoveryMode,
       signUp,
       signIn,
       signInWithGoogle,
       signOut,
+      requestPasswordReset,
+      completePasswordReset,
       refreshProfile: () => loadProfile(session?.user?.id),
     }),
     [
@@ -156,10 +186,13 @@ export function AuthProvider({ children }) {
       loading,
       pendingRef,
       referralLink,
+      recoveryMode,
       signUp,
       signIn,
       signInWithGoogle,
       signOut,
+      requestPasswordReset,
+      completePasswordReset,
       loadProfile,
     ],
   )
