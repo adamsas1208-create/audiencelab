@@ -1,5 +1,3 @@
-// AIBrainLoader's cinematic DNA, extracted for everyday use.
-//
 // Two pieces, composable:
 //
 //   <AmbientOrb icon={Clapperboard} />   — the breathing neon halo + icon that

@@ -19,7 +19,6 @@ const LS = {
   analytics: 'al_analytics_v1',
   polls: 'al_polls_v1',
   hookTests: 'al_hooktests_v1',
-  lastDuel: 'al_last_duel_v1',
 }
 
 const DEFAULT_PROFILE = {
@@ -125,10 +124,6 @@ export function DataProvider({ children }) {
   // Visual poll / hook tests created from the Creator Studio modal. Starts empty
   // and grows as the creator publishes tests.
   const [hookTests, setHookTests] = useState(() => load(LS.hookTests, []))
-  // The most recent REAL AI duel result (Creator Studio's live Ollama
-  // critique) — Critique Room renders this instead of design-time mock data.
-  // null until the creator actually runs a hook test.
-  const [lastDuel, setLastDuel] = useState(() => load(LS.lastDuel, null))
   const [toasts, setToasts] = useState([])
 
   // Persist each slice whenever it changes.
@@ -137,7 +132,6 @@ export function DataProvider({ children }) {
   useEffect(() => save(LS.analytics, analytics), [analytics])
   useEffect(() => save(LS.polls, polls), [polls])
   useEffect(() => save(LS.hookTests, hookTests), [hookTests])
-  useEffect(() => save(LS.lastDuel, lastDuel), [lastDuel])
 
   // Cross-tab live sync: if another tab (e.g. the open /p/<handle> page) writes
   // to localStorage, mirror it here so views stay in lockstep.
@@ -151,7 +145,6 @@ export function DataProvider({ children }) {
         const stored = load(LS.polls, null)
         if (Array.isArray(stored) && stored.length) setPolls(stored)
       } else if (e.key === LS.hookTests) setHookTests(load(LS.hookTests, []))
-      else if (e.key === LS.lastDuel) setLastDuel(load(LS.lastDuel, null))
     }
     window.addEventListener('storage', onStorage)
     return () => window.removeEventListener('storage', onStorage)
@@ -387,26 +380,6 @@ export function DataProvider({ children }) {
     [backed],
   )
 
-  // Store the latest REAL AI duel result (Creator Studio → /api/duel) so
-  // Critique Room can render actual analysis instead of mock content.
-  const recordDuelResult = useCallback(
-    ({ question, options, analysis, theCoach, theCritic, verdict }) => {
-      setLastDuel({
-        question: (question || '').trim(),
-        options: (options || []).map((o) => ({
-          label: o.label || '',
-          image_url: o.image_url || '',
-        })),
-        analysis: analysis || [],
-        theCoach: theCoach || '',
-        theCritic: theCritic || '',
-        verdict: verdict || null,
-        completedAt: new Date().toISOString(),
-      })
-    },
-    [],
-  )
-
   // Leads = contacts that came in via the public-profile capture form.
   // localStorage-mode tags them with source='lead'; the Supabase capture_lead
   // RPC stamps platform='Profile' (see 0006 migration) — accept either so the
@@ -435,7 +408,6 @@ export function DataProvider({ children }) {
       analytics: effectiveAnalytics,
       polls,
       hookTests,
-      lastDuel,
       leadsCaptured,
       updateProfile,
       saveProfile,
@@ -446,7 +418,6 @@ export function DataProvider({ children }) {
       updatePollOption,
       addHookTest,
       setActivePoll,
-      recordDuelResult,
       toast,
     }),
     [
@@ -455,7 +426,6 @@ export function DataProvider({ children }) {
       effectiveAnalytics,
       polls,
       hookTests,
-      lastDuel,
       leadsCaptured,
       updateProfile,
       saveProfile,
@@ -466,7 +436,6 @@ export function DataProvider({ children }) {
       updatePollOption,
       addHookTest,
       setActivePoll,
-      recordDuelResult,
       toast,
     ],
   )

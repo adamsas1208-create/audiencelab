@@ -1,11 +1,8 @@
-import { useEffect, useRef, useState } from 'react'
-import { createPortal } from 'react-dom'
+import { useRef, useState } from 'react'
 import {
   ArrowDownRight,
   ArrowUpRight,
   BarChart3,
-  Bot,
-  Crown,
   Gamepad2,
   Image as ImageIcon,
   Loader2,
@@ -14,7 +11,6 @@ import {
   Rocket,
   Smartphone,
   Sparkles,
-  Swords,
   Trash2,
   UploadCloud,
   Video,
@@ -22,11 +18,9 @@ import {
 } from 'lucide-react'
 import { motion } from 'motion/react'
 import { useData } from '../context/data-context'
-import { fetchDuelScript } from '../lib/duel'
 import { AmbientGlowField } from '../design/components/AmbientOrb'
 import TiltCard from '../design/components/TiltCard'
 import { rise } from '../design/tokens/motion'
-import AIBrainLoader from './AIBrainLoader'
 import {
   myHooks,
   platforms,
@@ -53,10 +47,8 @@ const ACCEPTED_IMAGE_TYPES = 'image/png,image/jpeg,image/webp'
 // Turn a dropped/pasted/selected image File (or Blob) into a self-contained
 // base64 data URL. We downscale large images through a canvas first so the
 // resulting string stays small enough to live comfortably in localStorage —
-// raw phone screenshots can be several MB otherwise. Output is always PNG:
-// the local vision model (Ollama/llava) decodes PNG/JPEG reliably but cannot
-// decode WebP, so WebP would silently break image analysis. Falls back to the
-// untouched data URL only when it's already a decodable format.
+// raw phone screenshots can be several MB otherwise. Output is always PNG
+// when re-encoding; other formats short-circuit when already small.
 async function fileToImageDataURL(file, maxDim = 1280) {
   const dataUrl = await new Promise((resolve, reject) => {
     const reader = new FileReader()
@@ -64,10 +56,6 @@ async function fileToImageDataURL(file, maxDim = 1280) {
     reader.onerror = reject
     reader.readAsDataURL(file)
   })
-
-  // WebP sources must be re-encoded (the model can't read them); other formats
-  // can short-circuit when already small.
-  const isWebp = /^data:image\/webp/i.test(dataUrl)
 
   try {
     const image = await new Promise((resolve, reject) => {
@@ -77,8 +65,7 @@ async function fileToImageDataURL(file, maxDim = 1280) {
       el.src = dataUrl
     })
     const scale = Math.min(1, maxDim / Math.max(image.width, image.height))
-    // Small enough and already a decodable format — keep it as-is.
-    if (scale === 1 && !isWebp && dataUrl.length < 400_000) return dataUrl
+    if (scale === 1 && dataUrl.length < 400_000) return dataUrl
 
     const canvas = document.createElement('canvas')
     canvas.width = Math.max(1, Math.round(image.width * scale))
@@ -87,9 +74,6 @@ async function fileToImageDataURL(file, maxDim = 1280) {
     ctx.drawImage(image, 0, 0, canvas.width, canvas.height)
     return canvas.toDataURL('image/png')
   } catch {
-    // Only safe to return the original if it isn't WebP; otherwise re-raise so
-    // the caller doesn't store an undecodable image.
-    if (isWebp) throw new Error('Could not re-encode WebP image to PNG')
     return dataUrl
   }
 }
@@ -107,126 +91,8 @@ function firstImageFile(dataTransfer) {
   return files.find((f) => f.type.startsWith('image/')) || null
 }
 
-/* ----------------------------- AI Critique Agent ----------------------------
- * "Agent A7" is a simulated visual-critique model. It produces randomized but
- * plausible CTR / contrast / emotion metrics plus a written breakdown, themed
- * to the poll's content (gaming vs vlog vs general) so it reads as contextual.
- * --------------------------------------------------------------------------- */
-const SCAN_DURATION_MS = 2500
-const CONTRAST_LEVELS = ['High', 'Balanced', 'Low']
-const EMOTIONS = ['Excitement', 'Curiosity', 'Muted']
-
-const pick = (arr) => arr[Math.floor(Math.random() * arr.length)]
-
-function detectTheme(question, options) {
-  const text = `${question} ${options.map((o) => o.label).join(' ')}`.toLowerCase()
-  if (/gam|cyberpunk|anime|retro|controller|arcade|neon|esport/.test(text)) return 'gaming'
-  if (/vlog|caf|stroll|beach|morning|lifestyle|travel|coffee|rain|cozy/.test(text)) return 'vlog'
-  return 'general'
-}
-
-const WINNER_INSIGHTS = {
-  gaming: (l) =>
-    `${l} nails high-energy neon contrast with a centered focal subject — the eye locks on within 200ms, maximizing the click impulse for a gaming audience.`,
-  vlog: (l) =>
-    `${l} leads with warm, aspirational tones and clean subject separation. It reads as authentic and relatable, which is the strongest psychological hook for lifestyle viewers.`,
-  general: (l) =>
-    `${l} uses complementary color theory and strong facial/focal placement for maximum psychological hook, giving it the highest predicted pull.`,
-}
-const LOSER_INSIGHTS = {
-  gaming: (l) =>
-    `${l} runs muddy in the mid-tones and the action gets lost against a busy background. Recommendation: boost saturation and add a rim light to separate the subject.`,
-  vlog: (l) =>
-    `${l} feels flat and slightly under-exposed; the subject blends into the scene. Recommendation: lift contrast ~20% and tighten the crop for a clearer focal point.`,
-  general: (l) =>
-    `${l} lacks saturation and the text overlay risks getting lost in background noise. Recommendation: increase contrast by ~20% and simplify the composition.`,
-}
-
-// Produces one analysis record per option, with exactly one winner (top CTR).
-function analyzeOptions(question, options) {
-  const theme = detectTheme(question, options)
-  const rndScore = () => 4 + Math.floor(Math.random() * 6) // 4–9
-  const scored = options.map((o, i) => ({
-    label: (o.label || '').trim() || `Option ${OPTION_LETTERS[i] ?? i + 1}`,
-    hasImage: !!o.image_url,
-    ctr: Math.round((4 + Math.random() * 6) * 10) / 10, // 4.0–10.0%
-    contrast: pick(CONTRAST_LEVELS),
-    emotion: pick(EMOTIONS),
-    scores: {
-      readability: rndScore(),
-      contrast: rndScore(),
-      thumbStop: rndScore(),
-    },
-  }))
-  let winner = 0
-  scored.forEach((s, i) => {
-    if (s.ctr > scored[winner].ctr) winner = i
-  })
-  // Bias the winner toward favorable tags so the agent duel's bragging stays
-  // coherent — still real, generated data; just constrained to its strengths.
-  scored[winner].contrast = pick(['High', 'Balanced'])
-  scored[winner].emotion = pick(['Excitement', 'Curiosity'])
-
-  return scored.map((s, i) => ({
-    ...s,
-    isWinner: i === winner,
-    insight: (i === winner ? WINNER_INSIGHTS : LOSER_INSIGHTS)[theme](s.label),
-  }))
-}
-
-// Builds the clean Coach / Critic / Verdict review from the scan data, so the
-// local fallback is 100% contextual to the current pool — CTR, contrast,
-// emotion and whether a frame was uploaded all surface in the copy.
-function buildCoachCritic(analysis) {
-  const winner = analysis.find((a) => a.isWinner) ?? analysis[0]
-  const ranked = analysis.slice().sort((a, b) => b.ctr - a.ctr)
-  const foil = ranked.find((a) => a !== winner) ?? winner
-  const noFrame = analysis.filter((a) => !a.hasImage)
-
-  const theCoach =
-    `"${winner.label}" is your strongest play — a ${winner.ctr}% predicted CTR riding ${winner.contrast.toLowerCase()} contrast and a '${winner.emotion}' hook that stops the scroll. ` +
-    (winner.hasImage
-      ? 'The thumbnail gives the eye a clear focal point to lock onto. '
-      : 'Even without a frame the hook wording does real work. ') +
-    (foil !== winner
-      ? `"${foil.label}" still has a usable angle worth running as the A/B challenger.`
-      : 'Keep leaning into that hook.')
-
-  const theCritic =
-    (foil !== winner
-      ? `Be honest about "${foil.label}": at ${foil.ctr}% it trails, and its ${foil.contrast.toLowerCase()} contrast with a ${foil.emotion.toLowerCase()} read makes it easy to swipe past on a phone. `
-      : 'The field is thin, so the winning margin is fragile. ') +
-    (noFrame.length
-      ? `${noFrame.map((a) => `"${a.label}"`).join(' and ')} ${noFrame.length > 1 ? 'have' : 'has'} no real thumbnail — naked text gets skipped, so ship a frame.`
-      : 'Tighten the crop and push the focal subject so it still reads at thumbnail size on mobile.')
-
-  const verdict = {
-    winner: winner.label,
-    ctr: winner.ctr,
-    summary: `Deploy "${winner.label}" as your primary thumbnail (${winner.ctr}% predicted CTR, '${winner.emotion}' hook)${
-      foil !== winner ? ` and bench "${foil.label}" as the A/B challenger.` : '.'
-    }`,
-  }
-  return { theCoach, theCritic, verdict }
-}
-
-// Local mock review, shaped exactly like the /api/duel response. Used as a
-// fallback when the real critique API is unavailable (Ollama down, dev, or a
-// network error) so the review always renders.
-function localDuelFallback(question, options) {
-  const analysis = analyzeOptions(question, options)
-  const { theCoach, theCritic, verdict } = buildCoachCritic(analysis)
-  return { analysis, theCoach, theCritic, verdict }
-}
-
-// HARD BYPASS: when false, a failed AI request surfaces the REAL error in the
-// arena instead of silently masking it with the local mock above. Flip to true
-// to restore the offline mock (e.g. demos without Ollama running).
-const ALLOW_MOCK_FALLBACK = false
-
 // One-click test fixtures: each fills the option texts and appends matching
 // high-quality Unsplash images so a creator can publish a visual test instantly.
-// Presets ship with a varying option count to show off multi-option polls.
 const POLL_PRESETS = {
   gaming: {
     icon: Gamepad2,
@@ -377,270 +243,6 @@ function HookThumb({ src, alt }) {
   )
 }
 
-// The two review voices: Coach = mint (strengths), Critic = crimson (flaws).
-const COACH_COLOR = '#34e0a1'
-const CRITIC_COLOR = '#ff4d6d'
-
-// Clean fullscreen review takeover. Mounts (via a fresh key) when a scan
-// completes, with the already-fetched Coach / Critic text + verdict passed in as
-// props. A brief intro flash, then a clean two-panel "Coach vs Critic" reveal
-// with the gold verdict beneath. `onExit` returns the creator to the poll editor.
-function AgentDuel({ error, analysis, theCoach, theCritic, verdict, onExit }) {
-  // On error, skip the intro flash and show the failure immediately.
-  const [phase, setPhase] = useState(error ? 'result' : 'intro')
-
-  useEffect(() => {
-    if (error) return
-    const t = setTimeout(() => setPhase('result'), 1400)
-    return () => clearTimeout(t)
-  }, [error])
-
-  const result = phase === 'result'
-
-  return createPortal(
-    <div className="al-fade-in fixed inset-0 z-[60] flex flex-col bg-black/95 backdrop-blur-xl">
-      {/* Subtle ambient glow */}
-      <div className="pointer-events-none absolute inset-0">
-        <div className="absolute -top-40 left-1/3 size-[40rem] -translate-x-1/2 rounded-full bg-turquoise/10 blur-[160px]" />
-        <div className="absolute -bottom-40 right-1/4 size-[34rem] rounded-full bg-rose-500/10 blur-[150px]" />
-      </div>
-
-      {/* Top bar */}
-      <div className="relative z-30 flex items-center justify-between gap-3 border-b border-white/10 bg-black/50 px-5 py-3">
-        <div className="flex items-center gap-2">
-          <Sparkles className={error ? 'size-4 text-rose-400' : 'size-4 text-turquoise'} />
-          <span className="font-mono text-xs font-bold uppercase tracking-[0.2em] text-zinc-100">
-            {error ? 'AI Critique — Error' : 'AI Coach vs Critic'}
-          </span>
-        </div>
-        <button
-          type="button"
-          onClick={result ? onExit : () => setPhase('result')}
-          className="rounded-lg border border-white/15 bg-white/5 px-3 py-1 font-mono text-[10px] font-semibold uppercase tracking-wider text-zinc-400 transition-colors hover:text-zinc-100"
-        >
-          {result ? '✕ Close' : 'Skip ▸'}
-        </button>
-      </div>
-
-      {/* Stage */}
-      <div className="relative z-30 flex min-h-0 flex-1 items-center justify-center overflow-y-auto px-4 py-6 sm:px-8">
-        {error ? (
-          <div
-            className="w-full max-w-2xl rounded-2xl border border-rose-500/50 bg-black/70 p-7 text-center"
-            style={{ boxShadow: '0 0 60px -22px #ff4d6d' }}
-          >
-            <div className="font-mono text-sm font-bold uppercase tracking-[0.25em] text-rose-400">
-              ⚠️ AI Critique Failed
-            </div>
-            <p className="mt-2 text-[11px] uppercase tracking-wider text-zinc-500">
-              The local Ollama request failed — the mock was NOT used
-            </p>
-            <pre className="mt-5 max-h-72 overflow-auto whitespace-pre-wrap rounded-xl border border-white/10 bg-zinc-950 p-4 text-left text-sm leading-relaxed text-rose-200">
-              {error}
-            </pre>
-            <p className="mt-4 text-xs leading-relaxed text-zinc-400">
-              Make sure Ollama is running (
-              <span className="font-mono text-zinc-300">ollama serve</span>) and the
-              model is pulled (
-              <span className="font-mono text-zinc-300">ollama pull llava</span>).
-              The full trace is in the{' '}
-              <span className="font-mono text-zinc-300">npm run api</span> terminal.
-            </p>
-            <button
-              type="button"
-              onClick={onExit}
-              className="mt-6 inline-flex items-center gap-2 rounded-xl border border-rose-400/50 bg-rose-500/10 px-6 py-3 text-sm font-bold text-rose-200 transition-all hover:bg-rose-500/20 active:scale-[0.98]"
-            >
-              Close
-            </button>
-          </div>
-        ) : result ? (
-          <div className="al-fade-in flex w-full max-w-5xl flex-col gap-6">
-            {/* Score cards — per-option readability / contrast / thumb-stop */}
-            {analysis && analysis.length > 0 && (
-              <div>
-                <p className="mb-3 text-center font-mono text-[11px] font-bold uppercase tracking-[0.35em] text-zinc-500">
-                  Score Cards
-                </p>
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                  {analysis.map((r, i) => (
-                    <OptionScoreCard key={i} result={r} />
-                  ))}
-                </div>
-              </div>
-            )}
-
-            <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
-              <CritiquePanel
-                icon={Sparkles}
-                title="The Coach"
-                subtitle="What's working"
-                color={COACH_COLOR}
-                text={theCoach}
-              />
-              <CritiquePanel
-                icon={Swords}
-                title="The Critic"
-                subtitle="Why people swipe away"
-                color={CRITIC_COLOR}
-                text={theCritic}
-              />
-            </div>
-
-            {/* Gold verdict */}
-            <div
-              className="al-verdict-pop rounded-3xl border p-7 text-center"
-              style={{
-                borderColor: 'rgba(250,204,21,0.55)',
-                background:
-                  'linear-gradient(160deg, rgba(250,204,21,0.16), rgba(15,12,4,0.92))',
-                boxShadow:
-                  '0 0 80px -16px rgba(250,204,21,0.55), inset 0 0 40px -22px rgba(250,204,21,0.5)',
-              }}
-            >
-              <div className="flex items-center justify-center gap-2 font-mono text-xs font-bold uppercase tracking-[0.35em] text-amber-300">
-                <Crown className="size-5" />
-                The Verdict
-              </div>
-              <p
-                className="mt-3 text-3xl font-extrabold tracking-tight text-amber-100 sm:text-4xl"
-                style={{ textShadow: '0 0 28px rgba(250,204,21,0.7)' }}
-              >
-                👑 {verdict.winner}
-                {verdict.ctr ? (
-                  <span className="ml-3 align-middle text-xl font-bold text-amber-300/90 sm:text-2xl">
-                    {verdict.ctr}% CTR
-                  </span>
-                ) : null}
-              </p>
-              <p className="mx-auto mt-3 max-w-2xl text-sm leading-relaxed text-amber-100/80">
-                {verdict.summary}
-              </p>
-              <button
-                type="button"
-                onClick={onExit}
-                className="mt-6 inline-flex items-center gap-2 rounded-xl bg-amber-300 px-6 py-3 text-sm font-bold text-black transition-all hover:brightness-110 active:scale-[0.98]"
-                style={{ boxShadow: '0 0 30px -6px rgba(250,204,21,0.8)' }}
-              >
-                🎯 Return to Poll Editor
-              </button>
-            </div>
-          </div>
-        ) : (
-          <div className="text-center">
-            <div className="al-intro-flash font-mono text-2xl font-extrabold uppercase tracking-tight text-amber-300 sm:text-4xl">
-              ⚖️ Verdict Incoming
-            </div>
-            <p className="mx-auto mt-5 max-w-md text-sm leading-relaxed text-zinc-400">
-              Your AI Coach and Critic have reviewed every option. Stand by for
-              the clean breakdown…
-            </p>
-          </div>
-        )}
-      </div>
-    </div>,
-    document.body,
-  )
-}
-
-// One review panel — Coach (mint, strengths) or Critic (crimson, flaws).
-function CritiquePanel({ icon: Icon, title, subtitle, color, text }) {
-  return (
-    <div
-      className="rounded-2xl border bg-black/60 p-5"
-      style={{ borderColor: `${color}55`, boxShadow: `0 0 44px -24px ${color}` }}
-    >
-      <div className="flex items-center gap-2.5">
-        <Icon className="size-5 shrink-0" style={{ color }} />
-        <div>
-          <p
-            className="font-mono text-sm font-bold uppercase tracking-[0.2em]"
-            style={{ color, textShadow: `0 0 12px ${color}55` }}
-          >
-            {title}
-          </p>
-          <p className="text-[11px] uppercase tracking-wider text-zinc-500">
-            {subtitle}
-          </p>
-        </div>
-      </div>
-      <p
-        className="mt-4 text-base leading-relaxed text-zinc-100 sm:text-lg"
-        style={{ textShadow: '0 1px 8px rgba(0,0,0,0.7)' }}
-      >
-        {text}
-      </p>
-    </div>
-  )
-}
-
-// The 3 score-card metrics, in display order, with their palette accents.
-const SCORE_METRICS = [
-  { key: 'readability', label: 'Readability', color: '#34e0a1' }, // mint
-  { key: 'contrast', label: 'Contrast', color: '#facc15' }, // gold
-  { key: 'thumbStop', label: 'Thumb-Stop', color: '#ff4d6d' }, // crimson
-]
-
-// One glowing /10 metric bar.
-function ScoreBar({ label, value, color }) {
-  const v = Math.max(0, Math.min(10, Number(value) || 0))
-  return (
-    <div>
-      <div className="flex items-baseline justify-between text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
-        <span>{label}</span>
-        <span className="font-mono text-sm" style={{ color }}>
-          {v}
-          <span className="text-zinc-600">/10</span>
-        </span>
-      </div>
-      <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-white/[0.06]">
-        <div
-          className="h-full rounded-full transition-all duration-700"
-          style={{
-            width: `${v * 10}%`,
-            background: `linear-gradient(90deg, ${color}aa, ${color})`,
-            boxShadow: `0 0 12px -1px ${color}`,
-          }}
-        />
-      </div>
-    </div>
-  )
-}
-
-// A premium per-option score card: label + winner badge + the 3 metric bars.
-function OptionScoreCard({ result }) {
-  const scores = result.scores || {}
-  return (
-    <div
-      className="rounded-2xl border bg-black/50 p-4"
-      style={{
-        borderColor: result.isWinner ? 'rgba(250,204,21,0.5)' : 'rgba(255,255,255,0.1)',
-        boxShadow: result.isWinner ? '0 0 44px -20px rgba(250,204,21,0.8)' : 'none',
-      }}
-    >
-      <div className="flex items-center justify-between gap-2">
-        <p className="truncate text-sm font-bold text-zinc-100" title={result.label}>
-          {result.label}
-        </p>
-        {result.isWinner ? (
-          <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-amber-300/40 bg-amber-300/10 px-2 py-0.5 font-mono text-[10px] font-bold uppercase tracking-wider text-amber-300">
-            <Crown className="size-3" /> Winner
-          </span>
-        ) : (
-          <span className="font-mono text-[10px] uppercase tracking-wider text-zinc-600">
-            {result.ctr}% CTR
-          </span>
-        )}
-      </div>
-      <div className="mt-3.5 space-y-2.5">
-        {SCORE_METRICS.map((m) => (
-          <ScoreBar key={m.key} label={m.label} value={scores[m.key]} color={m.color} />
-        ))}
-      </div>
-    </div>
-  )
-}
-
 // One card in the simulated mobile feed: thumbnail + duration badge + a
 // channel row, sized exactly as it would appear scrolling a real phone.
 function FeedCard({ option }) {
@@ -730,137 +332,44 @@ function MobileFeedPreview({ options }) {
   )
 }
 
-// Premium pop-up for building a Visual Image Poll / Hook Test.
+// Premium pop-up for building a Visual Image Poll / Hook Test. Publishes
+// straight to the hook-test list — no AI critique step, just a clean
+// question + up to 4 image/text options with a live mobile-feed preview.
 function NewHookTestModal({ onClose }) {
-  const { addHookTest, recordDuelResult, toast } = useData()
+  const { addHookTest, toast } = useData()
   const [question, setQuestion] = useState('')
   const [options, setOptions] = useState(() => [emptyOption(), emptyOption()])
-
-  // AI critique agent state.
-  const [isScanning, setIsScanning] = useState(false)
-  const [analysis, setAnalysis] = useState(null) // array parallel to options
-  const [duelData, setDuelData] = useState(null) // { analysis, theCoach, theCritic, verdict }
-  const [duelError, setDuelError] = useState(null) // real AI failure message (no mock mask)
-  const [scanId, setScanId] = useState(0) // bumps each scan to remount the duel
-  const [showDuel, setShowDuel] = useState(false) // cinematic arena visibility
-  const [showFeed, setShowFeed] = useState(false) // mobile feed simulation pane
-  // Read the latest options at scan-completion without re-running the effect.
-  const optionsRef = useRef(options)
-  useEffect(() => {
-    optionsRef.current = options
-  }, [options])
-
-  // Any edit invalidates a prior scan so stale verdicts never linger.
-  const clearAI = () => {
-    setAnalysis(null)
-    setDuelData(null)
-    setDuelError(null)
-    setShowDuel(false)
-  }
+  const [showFeed, setShowFeed] = useState(false)
 
   const loadPreset = (key) => {
-    if (isScanning) return
     const preset = POLL_PRESETS[key]
     setQuestion(preset.question)
     // Clone so editing one published test never mutates the preset fixture.
     setOptions(preset.options.slice(0, MAX_OPTIONS).map((o) => ({ ...o })))
-    clearAI()
   }
 
   const setOption = (i, next) => {
     setOptions((prev) => prev.map((o, idx) => (idx === i ? next : o)))
-    clearAI()
   }
 
   const addOption = () => {
     setOptions((prev) =>
       prev.length >= MAX_OPTIONS ? prev : [...prev, emptyOption()],
     )
-    clearAI()
   }
 
   const removeOption = (i) => {
     setOptions((prev) =>
       prev.length <= MIN_OPTIONS ? prev : prev.filter((_, idx) => idx !== i),
     )
-    clearAI()
   }
-
-  // Run the scan: the cinematic AI-Brain loader plays while the real critique
-  // is fetched, then the duel reveals.
-  const runScan = () => {
-    if (isScanning) return
-    setAnalysis(null)
-    setDuelData(null)
-    setDuelError(null)
-    setShowDuel(false)
-    setIsScanning(true)
-  }
-
-  // Drive the scan: fetch the real critique while the AI-Brain loader plays, then
-  // reveal the duel. The fight is 100% the model's output; on any failure (no API
-  // key, network, malformed response) we fall back to the local mock so the
-  // cinematic always runs. A minimum display time keeps the scan dramatic even
-  // when the API answers instantly.
-  useEffect(() => {
-    if (!isScanning) return
-    let cancelled = false
-
-    const q = question
-    const opts = optionsRef.current
-    const minDelay = new Promise((resolve) => setTimeout(resolve, SCAN_DURATION_MS))
-
-    Promise.all([fetchDuelScript(q, opts), minDelay])
-      .then(([data]) => {
-        if (cancelled) return
-        setDuelData(data)
-        setAnalysis(data.analysis)
-        setDuelError(null)
-        setScanId((n) => n + 1)
-        setShowDuel(true)
-        setIsScanning(false)
-        // Real critique, real result — Critique Room reads this instead of
-        // its old hardcoded mock.
-        recordDuelResult({
-          question: q,
-          options: opts,
-          analysis: data.analysis,
-          theCoach: data.theCoach,
-          theCritic: data.theCritic,
-          verdict: data.verdict,
-        })
-      })
-      .catch((err) => {
-        if (cancelled) return
-        console.error('AI critique request failed:', err)
-        if (ALLOW_MOCK_FALLBACK) {
-          const data = localDuelFallback(q, opts)
-          setDuelData(data)
-          setAnalysis(data.analysis)
-          setDuelError(null)
-        } else {
-          // Surface the real failure — do NOT mask it with the mock.
-          setDuelData(null)
-          setAnalysis(null)
-          setDuelError(err && err.message ? err.message : 'AI critique failed')
-        }
-        setScanId((n) => n + 1)
-        setShowDuel(true)
-        setIsScanning(false)
-      })
-
-    return () => {
-      cancelled = true
-    }
-  }, [isScanning, question, recordDuelResult])
 
   // Only options with a title count; need at least the minimum to publish.
   const filledOptions = options.filter((o) => o.label.trim())
   const canPublish = question.trim() && filledOptions.length >= MIN_OPTIONS
-  const canRemove = options.length > MIN_OPTIONS && !isScanning
-  const canAdd = options.length < MAX_OPTIONS && !isScanning
+  const canRemove = options.length > MIN_OPTIONS
+  const canAdd = options.length < MAX_OPTIONS
   const hasAnyImage = options.some((o) => o.image_url)
-  const hasScanResults = !isScanning && Array.isArray(analysis)
 
   const publish = (e) => {
     e.preventDefault()
@@ -877,7 +386,6 @@ function NewHookTestModal({ onClose }) {
   }
 
   return (
-    <>
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div
         className="al-modal-backdrop absolute inset-0"
@@ -925,8 +433,7 @@ function NewHookTestModal({ onClose }) {
                 key={key}
                 type="button"
                 onClick={() => loadPreset(key)}
-                disabled={isScanning}
-                className="inline-flex items-center gap-1.5 rounded-xl border border-turquoise/30 bg-turquoise/10 px-3 py-1.5 text-xs font-semibold text-turquoise transition-colors hover:bg-turquoise/15 disabled:opacity-40"
+                className="inline-flex items-center gap-1.5 rounded-xl border border-turquoise/30 bg-turquoise/10 px-3 py-1.5 text-xs font-semibold text-turquoise transition-colors hover:bg-turquoise/15"
               >
                 <Icon className="size-3.5" />
                 {preset.label}
@@ -941,13 +448,9 @@ function NewHookTestModal({ onClose }) {
               type="text"
               required
               value={question}
-              onChange={(e) => {
-                setQuestion(e.target.value)
-                clearAI()
-              }}
-              disabled={isScanning}
+              onChange={(e) => setQuestion(e.target.value)}
               placeholder="Which thumbnail should I run?"
-              className={`${modalInputCls} disabled:opacity-60`}
+              className={modalInputCls}
             />
           </ModalField>
 
@@ -960,8 +463,6 @@ function NewHookTestModal({ onClose }) {
                   value={option}
                   onChange={(next) => setOption(i, next)}
                   onRemove={canRemove ? () => removeOption(i) : null}
-                  scanning={isScanning}
-                  result={hasScanResults ? analysis[i] : null}
                 />
               ))}
             </div>
@@ -984,8 +485,7 @@ function NewHookTestModal({ onClose }) {
             <button
               type="button"
               onClick={() => setShowFeed((v) => !v)}
-              disabled={isScanning}
-              className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-periwinkle/40 bg-periwinkle/10 px-4 py-2.5 text-sm font-semibold text-periwinkle transition-colors hover:bg-periwinkle/15 disabled:cursor-not-allowed disabled:opacity-40"
+              className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-periwinkle/40 bg-periwinkle/10 px-4 py-2.5 text-sm font-semibold text-periwinkle transition-colors hover:bg-periwinkle/15"
             >
               <Smartphone className="size-4" />
               {showFeed ? 'Hide Mobile Feed Simulation' : 'Preview in Mobile Feed Simulation'}
@@ -994,76 +494,25 @@ function NewHookTestModal({ onClose }) {
           </div>
         )}
 
-        {/* Cyberpunk AI critique trigger */}
-        <button
-          type="button"
-          onClick={runScan}
-          disabled={isScanning || !hasAnyImage}
-          title={
-            hasAnyImage
-              ? 'Run the Agent A7 visual critique'
-              : 'Add at least one image to analyze'
-          }
-          className={[
-            'relative mt-5 inline-flex w-full items-center justify-center gap-2 overflow-hidden rounded-xl border border-turquoise/50 bg-gradient-to-r from-turquoise/15 via-cyan-400/10 to-turquoise/15 px-4 py-3.5 text-sm font-bold uppercase tracking-wide text-turquoise transition-all hover:brightness-125 disabled:cursor-not-allowed disabled:opacity-50',
-            isScanning ? '' : 'al-ai-pulse',
-          ].join(' ')}
-          style={{ textShadow: '0 0 12px rgba(52,224,161,0.55)' }}
-        >
-          {isScanning ? (
-            <>
-              <Loader2 className="size-4 animate-spin" /> Scanning visuals…
-            </>
-          ) : (
-            <>🤖 Ask AI for Early Feedback</>
-          )}
-        </button>
-
-        <div className="relative mt-4 flex items-center justify-end gap-2">
+        <div className="relative mt-5 flex items-center justify-end gap-2">
           <button
             type="button"
             onClick={onClose}
-            disabled={isScanning}
-            className="rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm font-medium text-zinc-300 transition-colors hover:text-zinc-100 disabled:opacity-40"
+            className="rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm font-medium text-zinc-300 transition-colors hover:text-zinc-100"
           >
             Cancel
           </button>
           <button
             type="submit"
-            disabled={!canPublish || isScanning}
+            disabled={!canPublish}
             className="inline-flex items-center gap-2 rounded-xl bg-turquoise px-5 py-2.5 text-sm font-bold text-black transition-all hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
             style={{ boxShadow: '0 0 24px -4px color-mix(in oklab, var(--al-tq) 67%, transparent)' }}
           >
             <Rocket className="size-4" /> Publish &amp; Run Test
           </button>
         </div>
-
       </form>
     </div>
-
-    {/* Cinematic "AI Brain" takeover while the real critique is fetched. It
-        portals over everything (including the modal) and hands off to the
-        AgentDuel the instant results land. */}
-    {isScanning && (
-      <AIBrainLoader fullscreen title="AI Coach vs Critic · Deep Scan" frameCount={filledOptions.length || 2} />
-    )}
-
-    {/* Fullscreen AI review — sibling of the modal so its fixed overlay resolves
-        against the viewport, not the transformed modal. Remounts per scan via
-        scanId. Exiting only dismisses the arena; the modal and all of its
-        inputs/scores stay intact underneath. */}
-    {showDuel && (duelError || (duelData && analysis && analysis.length >= 2)) && (
-      <AgentDuel
-        key={scanId}
-        error={duelError}
-        analysis={duelData?.analysis}
-        theCoach={duelData?.theCoach}
-        theCritic={duelData?.theCritic}
-        verdict={duelData?.verdict}
-        onExit={() => setShowDuel(false)}
-      />
-    )}
-    </>
   )
 }
 
@@ -1085,9 +534,7 @@ function ModalField({ label, children }) {
 // drag-and-drop, and clipboard paste (Ctrl+V). The image is stored as a base64
 // data URL so it persists in localStorage and renders just like a remote URL.
 // onRemove is null when removing would drop below the minimum option count.
-// `scanning` shows the AI laser sweep; `result` is the Agent A7 verdict for
-// this option once a scan completes.
-function OptionEditor({ letter, value, onChange, onRemove, scanning, result }) {
+function OptionEditor({ letter, value, onChange, onRemove }) {
   const [broken, setBroken] = useState(false)
   const [dragging, setDragging] = useState(false)
   const [processing, setProcessing] = useState(false)
@@ -1168,7 +615,7 @@ function OptionEditor({ letter, value, onChange, onRemove, scanning, result }) {
         <div
           className="group relative aspect-video w-full overflow-hidden rounded-lg border border-white/10 bg-black/40"
           tabIndex={0}
-          onPaste={scanning ? undefined : onPaste}
+          onPaste={onPaste}
         >
           <img
             src={url}
@@ -1176,77 +623,37 @@ function OptionEditor({ letter, value, onChange, onRemove, scanning, result }) {
             className="size-full object-cover"
             onError={() => setBroken(true)}
           />
-
-          {/* Agent A7 HUD overlay — metrics injected on top of the image */}
-          {result && (
-            <div className="al-fade-in absolute inset-0 flex flex-col justify-end bg-gradient-to-t from-black/90 via-black/45 to-transparent p-2">
-              <div
-                className="rounded-lg border border-turquoise/40 bg-black/60 p-2 backdrop-blur-md"
-                style={{ boxShadow: '0 0 22px -8px var(--al-tq)' }}
-              >
-                <div className="flex items-center justify-between">
-                  <span className="font-mono text-[8px] font-bold uppercase tracking-wider text-turquoise/70">
-                    Predicted CTR
-                  </span>
-                  {result.isWinner && (
-                    <span className="rounded bg-turquoise/20 px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wide text-turquoise">
-                      ★ Winner
-                    </span>
-                  )}
-                </div>
-                <div
-                  className="text-xl font-extrabold tabular-nums text-turquoise"
-                  style={{ textShadow: '0 0 14px rgba(52,224,161,0.6)' }}
-                >
-                  {result.ctr}%
-                </div>
-                <div className="mt-0.5 flex items-center justify-between gap-2 text-[9px] text-zinc-300">
-                  <span>
-                    Contrast: <b className="text-zinc-100">{result.contrast}</b>
-                  </span>
-                  <span>
-                    Impact: <b className="text-zinc-100">{result.emotion}</b>
-                  </span>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {!scanning && !result && (
-            <button
-              type="button"
-              onClick={() => setImage('')}
-              className="absolute right-1.5 top-1.5 inline-flex size-7 items-center justify-center rounded-lg bg-black/70 text-zinc-200 backdrop-blur transition-colors hover:bg-rose-500/80 hover:text-white"
-              title="Remove image"
-              aria-label={`Remove image from option ${letter}`}
-            >
-              <X className="size-4" />
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={() => setImage('')}
+            className="absolute right-1.5 top-1.5 inline-flex size-7 items-center justify-center rounded-lg bg-black/70 text-zinc-200 backdrop-blur transition-colors hover:bg-rose-500/80 hover:text-white"
+            title="Remove image"
+            aria-label={`Remove image from option ${letter}`}
+          >
+            <X className="size-4" />
+          </button>
         </div>
       ) : (
         // Empty — sleek dashed dropzone (click / drop / paste).
         <div
           role="button"
           tabIndex={0}
-          onClick={scanning ? undefined : openPicker}
+          onClick={openPicker}
           onKeyDown={(e) => {
-            if (!scanning && (e.key === 'Enter' || e.key === ' ')) {
+            if (e.key === 'Enter' || e.key === ' ') {
               e.preventDefault()
               openPicker()
             }
           }}
-          onPaste={scanning ? undefined : onPaste}
+          onPaste={onPaste}
           onDragOver={(e) => {
-            if (scanning) return
             e.preventDefault()
             setDragging(true)
           }}
           onDragLeave={() => setDragging(false)}
-          onDrop={scanning ? undefined : onDrop}
+          onDrop={onDrop}
           className={[
-            'flex aspect-video w-full flex-col items-center justify-center gap-1.5 rounded-lg border border-dashed text-center transition-colors focus:outline-none',
-            scanning ? 'cursor-not-allowed opacity-50' : 'cursor-pointer',
+            'flex aspect-video w-full flex-col items-center justify-center gap-1.5 rounded-lg border border-dashed text-center transition-colors focus:outline-none cursor-pointer',
             dragging
               ? 'border-turquoise bg-turquoise/10'
               : 'border-white/15 bg-black/40 hover:border-turquoise/50 hover:bg-turquoise/[0.04]',
@@ -1282,44 +689,9 @@ function OptionEditor({ letter, value, onChange, onRemove, scanning, result }) {
         type="text"
         value={value.label}
         onChange={(e) => onChange({ ...value, label: e.target.value })}
-        disabled={scanning}
         placeholder="Option Title / Hook"
-        className={`${modalInputCls} mt-2.5 disabled:opacity-60`}
+        className={`${modalInputCls} mt-2.5`}
       />
-
-      {/* Agent A7 written critique, revealed after a scan */}
-      {result && (
-        <div
-          className={[
-            'al-fade-in mt-2 rounded-lg border p-2.5',
-            result.isWinner
-              ? 'border-turquoise/40 bg-turquoise/[0.07]'
-              : 'border-white/10 bg-white/[0.03]',
-          ].join(' ')}
-        >
-          <div className="flex items-center gap-1.5">
-            <Bot
-              className={result.isWinner ? 'size-3.5 text-turquoise' : 'size-3.5 text-zinc-400'}
-            />
-            <span className="font-mono text-[9px] font-bold uppercase tracking-wider text-turquoise">
-              AI Insight · Agent A7
-            </span>
-            <span
-              className={[
-                'ml-auto rounded px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wide',
-                result.isWinner
-                  ? 'bg-turquoise/15 text-turquoise'
-                  : 'bg-amber-400/10 text-amber-300',
-              ].join(' ')}
-            >
-              {result.isWinner ? 'Top pick' : 'Needs work'}
-            </span>
-          </div>
-          <p className="mt-1.5 text-[11px] leading-relaxed text-zinc-300">
-            {result.insight}
-          </p>
-        </div>
-      )}
     </div>
   )
 }
