@@ -228,23 +228,7 @@ body {
     0 0 0 1px rgba(52, 224, 161, 0.7);
   z-index: 2;
 }
-/* Pulsing aura for the cyberpunk "Ask AI" button. */
-@keyframes al-ai-pulse {
-  0%,
-  100% {
-    box-shadow: 0 0 18px color-mix(in oklab, var(--al-tq) 25%, transparent),
-      inset 0 0 12px color-mix(in oklab, var(--al-tq) 8%, transparent);
-  }
-  50% {
-    box-shadow: 0 0 36px color-mix(in oklab, var(--al-tq) 55%, transparent),
-      inset 0 0 18px color-mix(in oklab, var(--al-tq) 18%, transparent);
-  }
-}
-.al-ai-pulse {
-  animation: al-ai-pulse 1.8s ease-in-out infinite;
-}
-
-/* Soft reveal for AI result cards/overlays. */
+/* Soft reveal for result cards/overlays. */
 @keyframes al-fade-in {
   from {
     opacity: 0;
@@ -335,35 +319,6 @@ body {
   backdrop-filter: invert(1) hue-rotate(180deg) contrast(1.2);
   -webkit-backdrop-filter: invert(1) hue-rotate(180deg) contrast(1.2);
   animation: al-heavy-flash 0.82s ease-out;
-}
-
-/* Slim, dark scrollbar for the debate log so long fights scroll elegantly. */
-.al-duel-log {
-  scrollbar-width: thin;
-  scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
-}
-.al-duel-log::-webkit-scrollbar {
-  width: 6px;
-}
-.al-duel-log::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.18);
-  border-radius: 9999px;
-}
-
-/* Flashing gold intro title for the takeover. */
-@keyframes al-intro-flash {
-  0%,
-  100% {
-    opacity: 0.55;
-    text-shadow: 0 0 12px rgba(250, 204, 21, 0.4);
-  }
-  50% {
-    opacity: 1;
-    text-shadow: 0 0 34px rgba(250, 204, 21, 0.95);
-  }
-}
-.al-intro-flash {
-  animation: al-intro-flash 0.9s ease-in-out infinite;
 }
 
 /* Massive gold verdict card scale-up. */
@@ -491,7 +446,6 @@ body {
   .al-modal-aura,
   .al-backdrop-in,
   .al-speedo,
-  .al-ai-pulse,
   .al-fade-in,
   .al-shake,
   .al-caret,
@@ -499,7 +453,6 @@ body {
   .al-flash-crimson,
   .al-flash-mint,
   .al-heavy-flash,
-  .al-intro-flash,
   .al-verdict-pop,
   .al-skeleton,
   .al-brain-orb,
