@@ -360,6 +360,37 @@ export function DataProvider({ children }) {
     [hookTests.length, isPro, toast],
   )
 
+  // Create a new poll (question + 2-4 text options). Mirrors addContact's
+  // limit-enforced dual-branch pattern: throws over the free-plan cap so the
+  // creation modal can surface an inline upgrade message via try/catch.
+  const createPoll = useCallback(
+    async ({ question, options }) => {
+      if (!isPro && polls.length >= FREE_LIMITS.polls) {
+        throw new Error(
+          `Free plan is capped at ${FREE_LIMITS.polls} polls. Upgrade to Pro for unlimited.`,
+        )
+      }
+      const cleanOptions = (options || [])
+        .map((o) => ({ label: (o.label || '').trim() }))
+        .filter((o) => o.label)
+      if (backed) {
+        const poll = await dbCreatePoll({ question: (question || '').trim(), options: cleanOptions })
+        setPolls((prev) => [...prev, poll])
+        return poll
+      }
+      const poll = {
+        id: uid(),
+        question: (question || '').trim(),
+        active: false,
+        created_at: new Date().toISOString(),
+        options: cleanOptions.map((o) => ({ id: uid(), label: o.label, image_url: '', votes: 0 })),
+      }
+      setPolls((prev) => [...prev, poll])
+      return poll
+    },
+    [backed, isPro, polls.length],
+  )
+
   // Patch a single poll option (e.g. attach/clear an image_url for a visual
   // poll). Merges the patch so existing fields like votes are preserved.
   const updatePollOption = useCallback(
@@ -431,6 +462,7 @@ export function DataProvider({ children }) {
       addLead,
       recordVote,
       recordPollVote,
+      createPoll,
       updatePollOption,
       addHookTest,
       setActivePoll,
@@ -449,6 +481,7 @@ export function DataProvider({ children }) {
       addLead,
       recordVote,
       recordPollVote,
+      createPoll,
       updatePollOption,
       addHookTest,
       setActivePoll,

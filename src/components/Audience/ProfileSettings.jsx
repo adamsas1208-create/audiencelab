@@ -8,6 +8,7 @@ import {
   Image as ImageIcon,
   Lock,
   Play,
+  Plus,
   Radio,
   Trash2,
   User,
@@ -17,6 +18,7 @@ import { useData } from '../../context/data-context'
 import { liveUrl } from '../../lib/share'
 import { springs } from '../../design/tokens/motion'
 import SharePollButton from '../SharePollButton'
+import NewPollModal from './NewPollModal'
 
 // Quick-select imagery so creators can spin up a visual poll instantly without
 // hunting for URLs. Real, high-quality stock shots keyed to common content types.
@@ -151,6 +153,7 @@ export default function ProfileSettings() {
   const { profile, updateProfile, saveProfile, polls, setActivePoll, updatePollOption, toast } =
     useData()
   const [saving, setSaving] = useState(false)
+  const [showNewPollModal, setShowNewPollModal] = useState(false)
 
   const activePoll = polls.find((p) => p.active) ?? null
 
@@ -348,9 +351,20 @@ export default function ProfileSettings() {
                   </button>
                 )
               })}
+
+              <button
+                type="button"
+                onClick={() => setShowNewPollModal(true)}
+                className="flex flex-col items-center justify-center gap-1.5 rounded-xl border border-dashed border-turquoise/30 bg-turquoise/[0.04] px-4 py-3 text-turquoise transition-colors hover:border-turquoise/50 hover:bg-turquoise/10"
+              >
+                <Plus className="size-4" />
+                <span className="text-xs font-semibold">New poll</span>
+              </button>
             </div>
           </div>
         </div>
+
+        {showNewPollModal && <NewPollModal onClose={() => setShowNewPollModal(false)} />}
 
         {/* Visual Image Polls — attach imagery to the live poll's options */}
         <div className="lg:col-span-2">

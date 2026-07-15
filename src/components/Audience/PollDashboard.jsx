@@ -15,6 +15,7 @@ import Glass from '../../design/components/Glass'
 import TiltCard from '../../design/components/TiltCard'
 import { rise } from '../../design/tokens/motion'
 import SharePollButton from '../SharePollButton'
+import NewPollModal from './NewPollModal'
 
 // Shared brand mint used across the app.
 const MINT = '#34e0a1'
@@ -212,6 +213,7 @@ function PollCard({ poll }) {
 
 export default function PollDashboard({ onLaunchPoll }) {
   const { polls, contacts, analytics } = useData()
+  const [showModal, setShowModal] = useState(false)
 
   // Superfans = most engaged followers, ranked by their engagement score.
   const superfans = useMemo(() => {
@@ -254,7 +256,7 @@ export default function PollDashboard({ onLaunchPoll }) {
           <SharePollButton />
           <button
             type="button"
-            onClick={onLaunchPoll}
+            onClick={() => setShowModal(true)}
             className="inline-flex items-center gap-2 rounded-xl bg-turquoise px-4 py-2.5 text-sm font-bold text-black transition-all hover:brightness-110 active:scale-[0.98]"
             style={{ boxShadow: '0 0 22px -4px var(--al-tq)' }}
           >
@@ -262,6 +264,16 @@ export default function PollDashboard({ onLaunchPoll }) {
           </button>
         </div>
       </div>
+
+      {onLaunchPoll && (
+        <button
+          type="button"
+          onClick={onLaunchPoll}
+          className="mt-2 text-xs text-zinc-500 underline-offset-2 transition-colors hover:text-turquoise hover:underline"
+        >
+          Manage existing polls & images in Public Profile →
+        </button>
+      )}
 
       {/* Poll Performance Breakdown */}
       <div className="mt-7 flex items-center justify-between">
@@ -274,8 +286,15 @@ export default function PollDashboard({ onLaunchPoll }) {
       </div>
 
       {sortedPolls.length === 0 ? (
-        <Glass as="p" className="mt-4 rounded-2xl p-8 text-center text-sm text-zinc-500">
-          No polls yet — launch one to start collecting votes.
+        <Glass className="mt-4 flex flex-col items-center gap-3 rounded-2xl p-8 text-center">
+          <p className="text-sm text-zinc-500">No polls yet — launch one to start collecting votes.</p>
+          <button
+            type="button"
+            onClick={() => setShowModal(true)}
+            className="inline-flex items-center gap-2 rounded-xl bg-turquoise px-4 py-2 text-sm font-semibold text-black transition-all hover:brightness-110"
+          >
+            <Rocket className="size-4" /> Create your first poll
+          </button>
         </Glass>
       ) : (
         <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
@@ -360,6 +379,8 @@ export default function PollDashboard({ onLaunchPoll }) {
           </table>
         </Glass>
       )}
+
+      {showModal && <NewPollModal onClose={() => setShowModal(false)} />}
     </div>
   )
 }
