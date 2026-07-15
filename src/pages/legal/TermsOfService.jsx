@@ -86,8 +86,8 @@ export default function TermsOfService() {
 
       <h2>9. Limitation of liability</h2>
       <p>
-        To the maximum extent permitted by law, AudienceLab and its
-        operators are not liable for any indirect, incidental, special, or
+        To the maximum extent permitted by law, the operator of the Service
+        is not liable for any indirect, incidental, special, or
         consequential damages arising from your use of the Service,
         including loss of data, revenue, or business opportunity.
       </p>
@@ -101,17 +101,17 @@ export default function TermsOfService() {
 
       <h2>11. Governing law</h2>
       <p>
-        These Terms are governed by the laws of the jurisdiction in which
-        the Service operator is established, without regard to conflict-of-law
-        principles. [Founder: fill in your actual jurisdiction here before
-        launch.]
+        These Terms are governed by the laws of the State of Israel, without
+        regard to conflict-of-law principles. Any dispute arising from these
+        Terms will be subject to the exclusive jurisdiction of the competent
+        courts of Israel.
       </p>
 
       <h2>12. Contact</h2>
       <p>
         Questions about these Terms, or requests to delete your account or
         data, can be sent to{' '}
-        <a href="mailto:support@audiencelab.app">support@audiencelab.app</a>.
+        <a href="mailto:adamsas1208@gmail.com">adamsas1208@gmail.com</a>.
       </p>
 
       <h2>A note on this document</h2>

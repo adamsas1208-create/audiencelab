@@ -100,7 +100,7 @@ export default function PrivacyPolicy() {
       <p>
         Questions about this policy, or requests to access/delete your data,
         can be sent to{' '}
-        <a href="mailto:support@audiencelab.app">support@audiencelab.app</a>.
+        <a href="mailto:adamsas1208@gmail.com">adamsas1208@gmail.com</a>.
       </p>
 
       <h2>A note on this document</h2>
